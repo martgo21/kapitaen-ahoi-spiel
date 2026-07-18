@@ -167,7 +167,7 @@ const nachtHimmel = new THREE.Group();
   g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   nachtHimmel.add(new THREE.Points(g,
     new THREE.PointsMaterial({color:0xffffff, size:1.8, transparent:true, opacity:0, fog:false})));
-  const mond = new THREE.Mesh(new THREE.SphereGeometry(7, 12, 10),
+  const mond = new THREE.Mesh(new THREE.SphereGeometry(7, 18, 14),
     new THREE.MeshBasicMaterial({color:0xf5f2df, transparent:true, opacity:0, fog:false}));
   mond.position.set(120, 130, -150);
   nachtHimmel.add(mond);
@@ -302,7 +302,7 @@ grund.position.y = GRUND_TIEFE;
 }
 szene.add(grund);
 for(let i=0;i<44;i++){
-  const fels = new THREE.Mesh(new THREE.DodecahedronGeometry(.8+Math.random()*2.2, 0),
+  const fels = new THREE.Mesh(new THREE.DodecahedronGeometry(.8+Math.random()*2.2, 1),
     new THREE.MeshPhongMaterial({color:0x4a4238, flatShading:true}));
   fels.position.set((Math.random()-.5)*480, GRUND_TIEFE+.6, (Math.random()-.5)*480);
   fels.rotation.set(Math.random()*3, Math.random()*3, 0);
@@ -333,9 +333,9 @@ const MAT = {
 function baueFigur(farbe){
   const g = new THREE.Group();
   const mat = new THREE.MeshPhongMaterial({color:farbe, flatShading:true});
-  const koerper = new THREE.Mesh(new THREE.CylinderGeometry(.09,.12,.34,6), mat);
+  const koerper = new THREE.Mesh(new THREE.CylinderGeometry(.09,.12,.34,9), mat);
   koerper.position.y = .17;
-  const kopf = new THREE.Mesh(new THREE.SphereGeometry(.11,6,5),
+  const kopf = new THREE.Mesh(new THREE.SphereGeometry(.11,9,7),
     new THREE.MeshPhongMaterial({color:0xf1c9a5, flatShading:true}));
   kopf.position.y = .43;
   g.add(koerper, kopf);
@@ -388,6 +388,22 @@ function setzeSchiffslichter(schiffObj, wert){
   for(const l of schiffObj.lichter) l.material.opacity = wert;
 }
 
+/* Reihe kleiner Bullaugen im schwarzen Rumpf – rein optisches Detail,
+   immer sichtbar (anders als die Nachtlichter), macht den Rumpf lebendiger. */
+const bullaugeMat = new THREE.MeshPhongMaterial({color:0x0a1216, flatShading:true});
+function baueBullaugen(bug, heck){
+  for(const [ziel, zStart, zEnd] of [[bug, -4.0, -0.5], [heck, 0.5, 4.0]]){
+    for(let zz = zStart; zz <= zEnd; zz += .62){
+      for(const seite of [-1, 1]){
+        const b = new THREE.Mesh(new THREE.CylinderGeometry(.065, .065, .05, 10), bullaugeMat);
+        b.rotation.z = Math.PI/2;
+        b.position.set(seite*1.23, .62, zz);
+        ziel.add(b);
+      }
+    }
+  }
+}
+
 function baueSchiffVoll(farbe){
   const wurzel = new THREE.Group();
   const bug  = new THREE.Group();
@@ -424,8 +440,8 @@ function baueSchiffVoll(farbe){
   const schornsteine = [];
   for(let i=0;i<4;i++){
     const s = new THREE.Group();
-    const rohr = new THREE.Mesh(new THREE.CylinderGeometry(.3,.36,1.5,10), MAT.beige);
-    const kappe = new THREE.Mesh(new THREE.CylinderGeometry(.31,.31,.28,10), MAT.dunkel);
+    const rohr = new THREE.Mesh(new THREE.CylinderGeometry(.3,.36,1.5,16), MAT.beige);
+    const kappe = new THREE.Mesh(new THREE.CylinderGeometry(.31,.31,.28,16), MAT.dunkel);
     kappe.position.y = .85;
     s.add(rohr, kappe);
     const sz = -1.9 + i*1.5;
@@ -436,14 +452,14 @@ function baueSchiffVoll(farbe){
   }
 
   for(const mz of [-4.2, 3.9]){
-    const mast = new THREE.Mesh(new THREE.CylinderGeometry(.04,.06,2.6,6), MAT.dunkel);
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(.04,.06,2.6,9), MAT.dunkel);
     mast.position.set(0, 2.6, mz); mast.rotation.x = -.06; halb(mz).add(mast);
   }
 
   const boote = [];
   for(let i=0;i<4;i++){
     for(const seite of [-1,1]){
-      const rb = new THREE.Mesh(new THREE.SphereGeometry(.14,6,5), MAT.weiss);
+      const rb = new THREE.Mesh(new THREE.SphereGeometry(.14,10,7), MAT.weiss);
       rb.scale.set(1,.7,2.4);
       const bz = -1.6 + i*1.2;
       rb.position.set(seite*.98, 1.95, bz);
@@ -466,13 +482,16 @@ function baueSchiffVoll(farbe){
   }
 
   const lichter = baueSchiffLichter(bug, heck);
+  baueBullaugen(bug, heck);
 
+  wurzel.scale.setScalar(SCHIFF_SKALA);
   szene.add(wurzel);
   return {wurzel, bug, heck, schornsteine, boote, gaesteFiguren, lichter};
 }
+const SCHIFF_SKALA = 1.18;
 const rettungsboote = [];
 let schiff = baueSchiffVoll(0x9c2b1f);
-const SCHIFF_RADIUS = 3.2;
+const SCHIFF_RADIUS = 3.2 * SCHIFF_SKALA;
 
 /* Gemeinsamer Partikel-Topf für Gischt, Blasen, Sandwolken */
 const gischtGeo = new THREE.BufferGeometry();
@@ -499,41 +518,47 @@ const RAUCH_N = 260;
 const rauchPos = new Float32Array(RAUCH_N*3).fill(-9);
 const rauchLeben = new Float32Array(RAUCH_N).fill(0);
 const rauchVY = new Float32Array(RAUCH_N);
-const rauchDrift = new Float32Array(RAUCH_N);
+const rauchVX = new Float32Array(RAUCH_N);
+const rauchVZ = new Float32Array(RAUCH_N);
 const rauchGeo = new THREE.BufferGeometry();
 rauchGeo.setAttribute("position", new THREE.BufferAttribute(rauchPos, 3));
 const rauchMat = new THREE.PointsMaterial({color:0x777f82, size:1.1, transparent:true, opacity:.5, depthWrite:false});
 const rauch = new THREE.Points(rauchGeo, rauchMat);
 szene.add(rauch);
 let rauchIdx = 0;
-function rauchPuff(x, y, z){
+function rauchPuff(x, y, z, vx, vz){
   const i = rauchIdx = (rauchIdx+1) % RAUCH_N;
   rauchPos[i*3]   = x + (Math.random()-.5)*.25;
   rauchPos[i*3+1] = y;
   rauchPos[i*3+2] = z + (Math.random()-.5)*.25;
   rauchLeben[i] = 1;
   rauchVY[i] = .55 + Math.random()*.4;
-  rauchDrift[i] = (Math.random()-.5)*.5;
+  // Der Rauch erbt die Geschwindigkeit des Schiffs (sonst bleibt er bei
+  // hohem Tempo sofort zurück und es sieht aus, als käme gar kein Rauch),
+  // plus etwas Wind/Streuung für einen natürlichen Schweif.
+  rauchVX[i] = (vx||0)*.9 + (Math.random()-.5)*.6 + sturm.windX*sturm.staerke*1.5;
+  rauchVZ[i] = (vz||0)*.9 + (Math.random()-.5)*.6 + sturm.windZ*sturm.staerke*1.5;
 }
 function rauchSchritt(dt){
   for(let i=0;i<RAUCH_N;i++){
     if(rauchLeben[i] > 0){
       rauchLeben[i] -= dt*.22;
       rauchPos[i*3+1] += rauchVY[i]*dt;
-      rauchPos[i*3] += rauchDrift[i]*dt;
+      rauchPos[i*3]   += rauchVX[i]*dt;
+      rauchPos[i*3+2] += rauchVZ[i]*dt;
       if(rauchLeben[i] <= 0) rauchPos[i*3+1] = -9;
     }
   }
   rauchGeo.attributes.position.needsUpdate = true;
 }
-function emittiereRauch(schiffObj){
+function emittiereRauch(schiffObj, vx, vz){
   for(let i=0;i<3;i++){                      // nur die drei vorderen Kamine
     const s = schiffObj.schornsteine[i];
     if(!s || s.parent === szene) continue;   // schon abgefallen -> kein Rauch mehr
     if(Math.random() < .5){
       const wp = new THREE.Vector3();
       s.getWorldPosition(wp);
-      rauchPuff(wp.x, wp.y + .9, wp.z);
+      rauchPuff(wp.x, wp.y + .9, wp.z, vx, vz);
     }
   }
 }
@@ -547,7 +572,7 @@ function baueEisberg(x, z, gr){
   for(let i=0;i<spitzen;i++){
     const h = i===0 ? gr*2.1 : gr*(0.8+Math.random()*.8);
     const r = i===0 ? gr*.95 : gr*(.4+Math.random()*.35);
-    const geo = new THREE.ConeGeometry(r, h, 6, 2);
+    const geo = new THREE.ConeGeometry(r, h, 9, 3);
     const p = geo.attributes.position;
     for(let j=0;j<p.count;j++){
       p.setX(j, p.getX(j) + (Math.random()-.5)*r*.3);
@@ -583,9 +608,14 @@ function eisbergSchritt(dt, t){
     if(Math.abs(berg.z) > RAND-15) berg.vz *= -1;
     berg.mesh.position.x = berg.x;
     berg.mesh.position.z = berg.z;
-    berg.mesh.position.y = wellenHoehe(berg.x, berg.z, t)*.4;
+    berg.mesh.position.y = wellenHoehe(berg.x, berg.z, t)*.55;
+    // Neigung an die tatsächliche Wellenneigung unter dem Eisberg anpassen –
+    // so wirkt es, als würde er wirklich auf den Wellen reiten.
+    const hierX = wellenHoehe(berg.x+1.2, berg.z, t), dortX = wellenHoehe(berg.x-1.2, berg.z, t);
+    const hierZ = wellenHoehe(berg.x, berg.z+1.2, t), dortZ = wellenHoehe(berg.x, berg.z-1.2, t);
+    berg.mesh.rotation.z += ((dortX-hierX)*.09 - berg.mesh.rotation.z) * Math.min(1, dt*2);
+    berg.mesh.rotation.x += ((dortZ-hierZ)*.09 - berg.mesh.rotation.x) * Math.min(1, dt*2);
     berg.mesh.rotation.y += berg.drehTempo*dt;
-    berg.mesh.rotation.z = Math.sin(t*.4 + berg.x)*.04;
   }
 }
 [[20,-26,3.5],[-26,14,4.5],[8,44,3],[-14,-44,4],[48,26,5],[-52,-10,3.5],
@@ -602,7 +632,7 @@ const inseln = [];
 function baueInsel(x, z, gr){
   const g = new THREE.Group();
   const huegel = new THREE.Mesh(
-    new THREE.SphereGeometry(gr, 12, 8),
+    new THREE.SphereGeometry(gr, 18, 12),
     new THREE.MeshPhongMaterial({color:0xf2d59b, flatShading:true}));
   huegel.scale.y = .6;
   g.add(huegel);
@@ -613,16 +643,26 @@ function baueInsel(x, z, gr){
     const abstand = Math.random()*gr*.35;
     const bodenHoehe = Math.sqrt(Math.max(0, gr*gr - abstand*abstand)) * .6;
     const bx = Math.cos(winkel)*abstand, bz = Math.sin(winkel)*abstand;
-    const stamm = new THREE.Mesh(new THREE.CylinderGeometry(.14,.2,1.4,6),
+    const stamm = new THREE.Mesh(new THREE.CylinderGeometry(.14,.2,1.4,9),
       new THREE.MeshPhongMaterial({color:0x8a5a3b, flatShading:true}));
     stamm.position.set(bx, bodenHoehe+.6, bz); g.add(stamm);
-    const krone = new THREE.Mesh(new THREE.ConeGeometry(.85,1.5,6),
+    const krone = new THREE.Mesh(new THREE.ConeGeometry(.85,1.5,9),
       new THREE.MeshPhongMaterial({color:0x2e9e5b, flatShading:true}));
     krone.position.set(bx, bodenHoehe+1.75, bz); g.add(krone);
   }
   g.position.set(x, 0, z);
   szene.add(g);
-  inseln.push({x, z, r: gr});
+  inseln.push({x, z, r: gr, mesh: g, bobPhase: Math.random()*10});
+}
+function inselSchritt(dt, t){
+  for(const insel of inseln){
+    if(!insel.mesh) continue;   // Hafen-Landzungen haben keine mesh-Referenz -> bleiben fest
+    // Inseln treiben nicht umher, gehen aber sanft vertikal mit den Wellen
+    // mit – kleiner als bei Eisbergen, sie sind ja viel schwerer im Wasser verankert.
+    const ziel = wellenHoehe(insel.x, insel.z, t + insel.bobPhase)*.18;
+    insel.mesh.position.y += (ziel - insel.mesh.position.y) * Math.min(1, dt*1.5);
+    insel.mesh.rotation.z = Math.sin(t*.3 + insel.bobPhase)*.015;
+  }
 }
 [[34,10,4],[-36,-24,5],[14,-38,3.5],[-20,36,4.5],[58,-30,4],[-58,34,5],
  [90,-10,4],[-80,-80,5],[10,120,4.5],[-120,-20,4],[120,50,3.5],[-30,-140,4.5],
@@ -637,15 +677,15 @@ const HAFEN_WARTE_MAX = 9;
    leuchtet aber nur nachts wirklich auf. */
 function baueLeuchtturm(g){
   const px = 6.5, pz = -2.5;
-  const basis = new THREE.Mesh(new THREE.CylinderGeometry(.55, .72, 4.2, 10),
+  const basis = new THREE.Mesh(new THREE.CylinderGeometry(.55, .72, 4.2, 16),
     new THREE.MeshPhongMaterial({color:0xf4efe4, flatShading:true}));
   basis.position.set(px, 2.1, pz); g.add(basis);
   for(const hy of [.8, 2.0, 3.2]){
-    const ring = new THREE.Mesh(new THREE.CylinderGeometry(.62, .66, .35, 10),
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(.62, .66, .35, 16),
       new THREE.MeshPhongMaterial({color:0xc23b2e, flatShading:true}));
     ring.position.set(px, hy, pz); g.add(ring);
   }
-  const huette = new THREE.Mesh(new THREE.CylinderGeometry(.75, .75, .55, 10), MAT.dunkel);
+  const huette = new THREE.Mesh(new THREE.CylinderGeometry(.75, .75, .55, 16), MAT.dunkel);
   huette.position.set(px, 4.4, pz); g.add(huette);
   const dach = new THREE.Mesh(new THREE.ConeGeometry(.88, .65, 10),
     new THREE.MeshPhongMaterial({color:0x8a4530, flatShading:true}));
@@ -655,7 +695,7 @@ function baueLeuchtturm(g){
   dreher.position.set(px, 4.4, pz);
   g.add(dreher);
 
-  const lampe = new THREE.Mesh(new THREE.SphereGeometry(.24, 8, 6),
+  const lampe = new THREE.Mesh(new THREE.SphereGeometry(.24, 10, 8),
     new THREE.MeshBasicMaterial({color:0xfff6c8, transparent:true, opacity:0, fog:false}));
   dreher.add(lampe);
 
@@ -692,7 +732,7 @@ function baueHafen(x, z, name, flaggenFarbe){
   const dirX = -x/l, dirZ = -z/l;
   g.rotation.y = Math.atan2(dirX, dirZ);
 
-  const land = new THREE.Mesh(new THREE.CylinderGeometry(10, 11.5, 1.6, 16),
+  const land = new THREE.Mesh(new THREE.CylinderGeometry(10, 11.5, 1.6, 22),
     new THREE.MeshPhongMaterial({color:0xf2d59b, flatShading:true}));
   land.position.y = -.2; g.add(land);
 
@@ -709,19 +749,19 @@ function baueHafen(x, z, name, flaggenFarbe){
   steg.position.set(0, 1.0, 14.5); g.add(steg);
   for(let i=0;i<6;i++){
     for(const s of [-1,1]){
-      const stelze = new THREE.Mesh(new THREE.CylinderGeometry(.14,.14,2.4,6), MAT.holz);
+      const stelze = new THREE.Mesh(new THREE.CylinderGeometry(.14,.14,2.4,9), MAT.holz);
       stelze.position.set(s*1.25, -.1, 8 + i*2.5); g.add(stelze);
     }
   }
   for(const seite of [-1,1]){
-    const laterne = new THREE.Mesh(new THREE.CylinderGeometry(.08,.1,1.6,6), MAT.dunkel);
+    const laterne = new THREE.Mesh(new THREE.CylinderGeometry(.08,.1,1.6,9), MAT.dunkel);
     laterne.position.set(seite*1.25, 1.9, 20.6); g.add(laterne);
-    const licht = new THREE.Mesh(new THREE.SphereGeometry(.24,8,6),
+    const licht = new THREE.Mesh(new THREE.SphereGeometry(.24,10,8),
       new THREE.MeshPhongMaterial({color:0xffd23f, emissive:0xaa7700}));
     licht.position.set(seite*1.25, 2.8, 20.6); g.add(licht);
   }
 
-  const fahnenMast = new THREE.Mesh(new THREE.CylinderGeometry(.08,.1,5.5,6), MAT.dunkel);
+  const fahnenMast = new THREE.Mesh(new THREE.CylinderGeometry(.08,.1,5.5,9), MAT.dunkel);
   fahnenMast.position.set(0, 2.6, -1.5); g.add(fahnenMast);
   const fahne = new THREE.Mesh(new THREE.BoxGeometry(2, 1.1, .06),
     new THREE.MeshPhongMaterial({color:flaggenFarbe, flatShading:true, side:THREE.DoubleSide}));
@@ -811,7 +851,7 @@ function baueNpcSchiff(farbe){
   rumpf.position.y = .4; g.add(rumpf);
   const kabine = new THREE.Mesh(new THREE.BoxGeometry(1, .6, 2), MAT.weiss);
   kabine.position.set(0, 1.1, .2); g.add(kabine);
-  const kamin = new THREE.Mesh(new THREE.CylinderGeometry(.16,.2,.9,8), MAT.dunkel);
+  const kamin = new THREE.Mesh(new THREE.CylinderGeometry(.16,.2,.9,12), MAT.dunkel);
   kamin.position.set(0, 1.8, .7); g.add(kamin);
   const licht = new THREE.Mesh(new THREE.SphereGeometry(.08, 6, 5),
     new THREE.MeshBasicMaterial({color:0xfff2cf, transparent:true, opacity:0, fog:false}));
@@ -1017,6 +1057,7 @@ function mpSendeHupe(){
 }
 function mpSchritt(dt, t){
   for(const [id, p] of andereSpieler){
+    const vorX = p.x, vorZ = p.z;
     // Sanft in Richtung der zuletzt empfangenen Position/Richtung gleiten
     const f = Math.min(1, dt*6);
     p.x += (p.zielX - p.x)*f;
@@ -1039,7 +1080,8 @@ function mpSchritt(dt, t){
       w.rotation.y = p.richtung;
       w.rotation.z = Math.sin(t*1.1 + p.x)*.04*wellenFaktor;
       w.rotation.x = Math.sin(t*.9 + p.z)*.03*wellenFaktor;
-      emittiereRauch(p.schiff);
+      const rvx = dt > 0 ? (p.x-vorX)/dt : 0, rvz = dt > 0 ? (p.z-vorZ)/dt : 0;
+      emittiereRauch(p.schiff, rvx, rvz);
       setzeSchiffslichter(p.schiff, aktuelleNacht);
     }
 
@@ -1846,7 +1888,7 @@ function hafenSchritt(dt){
     }
 
     const d = Math.hypot(spiel.x - h.dockX, spiel.z - h.dockZ);
-    if(d < 6.5 && Math.abs(spiel.tempo) < 1.6){
+    if(d < 6.5 && Math.abs(spiel.tempo) < 2.4){
       h.dockZeit += dt;
       if(h.dockZeit > .8 && !h.abgefertigt){
         h.abgefertigt = true;
@@ -1893,6 +1935,7 @@ function schrittLoop(){
 
   /* Eisberge treiben langsam über die Karte statt fest zu liegen */
   eisbergSchritt(dt, t);
+  inselSchritt(dt, t);
 
   /* NPC-Schiffe tuckern immer weiter */
   for(const npc of npcSchiffe) npcSchritt(npc, dt, t);
@@ -1943,7 +1986,7 @@ function schrittLoop(){
     spiel.boostEnergie = 1;                 // Boost ist jetzt unbegrenzt, Anzeige bleibt voll
     hudBoost.style.width = "100%";
 
-    const zielTempo = (schub >= 0 ? schub * 13 : schub * 8) * (boostet ? 1.8 : 1);
+    const zielTempo = (schub >= 0 ? schub * 15.5 : schub * 13) * (boostet ? 1.8 : 1);
     spiel.tempo += (zielTempo - spiel.tempo) * Math.min(1, dt*(boostet ? 1.8 : 1.1));
     spiel.tempo *= (1 - dt*.12);
     const wendigkeit = 1.05 * Math.min(1, Math.abs(spiel.tempo)/4 + .12) * (boostet ? .8 : 1);
@@ -1993,6 +2036,21 @@ function schrittLoop(){
           spiel.tempo *= .3;
         }
       }
+
+      /* Automatisches Anlegen: in Hafennähe bremst und zieht sich das
+         Schiff von selbst zur Anlegestelle, damit man nicht mehr exakt
+         manövrieren muss – nur noch grob hinsteuern reicht. */
+      for(const h of haefen){
+        const dd = Math.hypot(nx-h.dockX, nz-h.dockZ);
+        if(dd < 16){
+          const staerke = (16-dd)/16;
+          spiel.tempo *= Math.max(0, 1 - staerke*dt*3.5);
+          const zug = staerke*staerke*Math.min(1, dt*4.5);
+          nx += (h.dockX-nx)*zug;
+          nz += (h.dockZ-nz)*zug;
+        }
+      }
+
       nx = THREE.MathUtils.clamp(nx, -RAND, RAND);
       nz = THREE.MathUtils.clamp(nz, -RAND, RAND);
       spiel.x = nx; spiel.z = nz;
@@ -2011,7 +2069,7 @@ function schrittLoop(){
           .45,
           spiel.z + Math.cos(spiel.richtung)*5, boostet ? 2 : 1, 1.6);
       }
-      emittiereRauch(schiff);
+      emittiereRauch(schiff, Math.sin(spiel.richtung)*-spiel.tempo, Math.cos(spiel.richtung)*-spiel.tempo);
       setzeSchiffslichter(schiff, aktuelleNacht);
 
       hafenSchritt(dt);
