@@ -67,6 +67,21 @@
   .knopf:focus-visible{outline:3px dashed var(--tinte);outline-offset:3px}
   .klein{font-size:12px;opacity:.65}
   @media (prefers-reduced-motion: reduce){ .balken>div{transition:none} }
+
+  /* Touch-Steuerung fürs Handy */
+  #mobileSteuerung{position:fixed;inset:0;z-index:4;display:none;pointer-events:none;
+    justify-content:space-between;align-items:flex-end;padding:0 10px 18px}
+  #mobileSteuerung.aktiv{display:flex}
+  .mGruppe{pointer-events:auto;display:flex;gap:10px;align-items:flex-end}
+  .mKnopf{width:64px;height:64px;border-radius:50%;border:3px solid var(--tinte);
+    background:rgba(253,246,227,.82);color:var(--tinte);font-size:26px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 4px 0 rgba(20,48,60,.5);touch-action:none;user-select:none;
+    -webkit-user-select:none}
+  .mKnopf:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(20,48,60,.5)}
+  #mBoost{background:rgba(255,210,63,.88);font-size:22px}
+  #mHupe{width:52px;height:52px;font-size:20px;align-self:flex-start}
+  .mSpalte{display:flex;flex-direction:column;gap:8px;align-items:center}
 </style>
 </head>
 <body>
@@ -84,10 +99,25 @@
   <div class="chip aus" id="chipMp">Multiplayer: getrennt</div>
 </div>
 
-<div id="hinweis">⌨️ <b>Pfeiltasten</b>/<b>WASD</b>, <b>E</b> = Boost, <b>Leertaste</b> hupt, <b>R</b> = Neustart.<br>
-🧊 Eisberge und Rammen versenken das Schiff! ⚓ Bring die Fahrgäste zu ihrem Zielhafen –
+<div id="hinweis">⌨️ <b>Pfeiltasten</b>/<b>WASD</b>, <b>E</b> = Boost, <b>Leertaste</b> hupt, <b>R</b> = Neustart. 📱 Auf dem Handy erscheinen Touch-Tasten automatisch.<br>
+🧊 Eisberge und Rammen versenken das Schiff! ⚓ Die <b>Schilder</b> zeigen die Häfen, ein <b>Pfeil</b> überm Schiff das nächste Ziel –
 die <b>Farbe</b> der Figuren zeigt, zu welcher <b>Hafenfahne</b> sie wollen.</div>
 <div id="toast"></div>
+
+<div id="mobileSteuerung">
+  <div class="mGruppe">
+    <button class="mKnopf" id="mLinks" aria-label="Links">◀</button>
+    <button class="mKnopf" id="mRechts" aria-label="Rechts">▶</button>
+  </div>
+  <div class="mGruppe">
+    <button class="mKnopf" id="mHupe" aria-label="Hupe">📯</button>
+    <div class="mSpalte">
+      <button class="mKnopf" id="mVor" aria-label="Vorwärts">▲</button>
+      <button class="mKnopf" id="mBoost" aria-label="Boost">⚡</button>
+      <button class="mKnopf" id="mZurueck" aria-label="Rückwärts">▼</button>
+    </div>
+  </div>
+</div>
 <button class="eckKnopf" id="resetBtn">🔁 Neustart</button>
 <button class="eckKnopf" id="setupBtn">🕹️ Steuerung einrichten</button>
 
@@ -344,14 +374,21 @@ function baueFigur(farbe){
 }
 
 /* ---------------- Titanic (zweiteilig, damit sie brechen kann) ---------------- */
+function rumpfSkalierung(z){
+  // Exakt dieselbe Verjüngungs-Regel wie verjuenge() – wird auch für
+  // Bullaugen und Positionslichter gebraucht, damit die nicht neben dem
+  // sich verjüngenden Rumpf in der Luft hängen.
+  if(z < -4.4) return .1;
+  if(z < -2.6) return .6;
+  if(z >  4.4) return .55;
+  if(z >  2.6) return .85;
+  return 1;
+}
 function verjuenge(geo){
   const p = geo.attributes.position;
   for(let i=0;i<p.count;i++){
     const z = p.getZ(i);
-    if(z < -4.4) p.setX(i, p.getX(i)*.1);
-    else if(z < -2.6) p.setX(i, p.getX(i)*.6);
-    else if(z >  4.4) p.setX(i, p.getX(i)*.55);
-    else if(z >  2.6) p.setX(i, p.getX(i)*.85);
+    p.setX(i, p.getX(i) * rumpfSkalierung(z));
   }
   geo.computeVertexNormals();
   return geo;
@@ -366,20 +403,24 @@ let aktuelleNacht = 0;
    entlang des Rumpfs. Nachts blenden sie sanft auf. */
 function baueSchiffLichter(bug, heck){
   const lichter = [];
-  function licht(ziel, x, y, z, farbe, groesse){
+  // xBasis ist der Abstand von der Mitte bei VOLLER Rumpfbreite – die
+  // tatsächliche Position wird an der Stelle z automatisch an die
+  // Rumpfverjüngung angepasst, damit nichts in der Luft hängt.
+  function licht(ziel, xBasis, y, z, farbe, groesse){
+    const x = xBasis * rumpfSkalierung(z);
     const m = new THREE.Mesh(new THREE.SphereGeometry(groesse, 6, 5),
       new THREE.MeshBasicMaterial({color:farbe, transparent:true, opacity:0, fog:false}));
     m.position.set(x, y, z);
     ziel.add(m);
     lichter.push(m);
   }
-  licht(bug, -1.05, 1.55, -4.3, 0xff3b30, .085);   // Backbord (rot)
-  licht(bug,  1.05, 1.55, -4.3, 0x3ddc4a, .085);   // Steuerbord (grün)
+  licht(bug, -1.3, 1.55, -4.3, 0xff3b30, .085);   // Backbord (rot)
+  licht(bug,  1.3, 1.55, -4.3, 0x3ddc4a, .085);   // Steuerbord (grün)
   licht(bug,  0, 3.85, -4.15, 0xfff2cf, .09);      // Masttopplicht
   licht(heck, 0, 3.3, 3.8, 0xfff2cf, .08);         // Hecklicht
   for(const [ziel, zStart, zEnd] of [[bug, -3.8, -0.3], [heck, 0.3, 3.8]]){
     for(let zz = zStart; zz <= zEnd; zz += 1.3){
-      for(const seite of [-1, 1]) licht(ziel, seite*1.22, .75, zz, 0xffdf9e, .05);
+      for(const seite of [-1, 1]) licht(ziel, seite*1.3, .75, zz, 0xffdf9e, .05);
     }
   }
   return lichter;
@@ -392,12 +433,13 @@ function setzeSchiffslichter(schiffObj, wert){
    immer sichtbar (anders als die Nachtlichter), macht den Rumpf lebendiger. */
 const bullaugeMat = new THREE.MeshPhongMaterial({color:0x0a1216, flatShading:true});
 function baueBullaugen(bug, heck){
-  for(const [ziel, zStart, zEnd] of [[bug, -4.0, -0.5], [heck, 0.5, 4.0]]){
-    for(let zz = zStart; zz <= zEnd; zz += .62){
+  for(const [ziel, zStart, zEnd] of [[bug, -3.9, -0.4], [heck, 0.4, 3.9]]){
+    for(let zz = zStart; zz <= zEnd; zz += .58){
+      const x = 1.28 * rumpfSkalierung(zz);
       for(const seite of [-1, 1]){
         const b = new THREE.Mesh(new THREE.CylinderGeometry(.065, .065, .05, 10), bullaugeMat);
         b.rotation.z = Math.PI/2;
-        b.position.set(seite*1.23, .62, zz);
+        b.position.set(seite*x, .62, zz);
         ziel.add(b);
       }
     }
@@ -471,6 +513,7 @@ function baueSchiffVoll(farbe){
 
   // Neun Plätze für Fahrgäste auf dem Oberdeck (mehr Kapazität)
   const gaesteFiguren = [];
+  const wanderZiel = [];
   const plaetze = [];
   for(let i=0;i<9;i++) plaetze.push([(i%2? .4:-.4), -2.3 + i*(4.6/8)]);
   for(let i=0;i<plaetze.length;i++){
@@ -479,6 +522,11 @@ function baueSchiffVoll(farbe){
     f.visible = false;
     halb(plaetze[i][1]).add(f);
     gaesteFiguren.push(f);
+    wanderZiel.push({
+      heimX: plaetze[i][0], heimZ: plaetze[i][1],
+      zielX: plaetze[i][0], zielZ: plaetze[i][1],
+      wartezeit: Math.random()*3
+    });
   }
 
   const lichter = baueSchiffLichter(bug, heck);
@@ -486,7 +534,7 @@ function baueSchiffVoll(farbe){
 
   wurzel.scale.setScalar(SCHIFF_SKALA);
   szene.add(wurzel);
-  return {wurzel, bug, heck, schornsteine, boote, gaesteFiguren, lichter};
+  return {wurzel, bug, heck, schornsteine, boote, gaesteFiguren, lichter, wanderZiel};
 }
 const SCHIFF_SKALA = 1.18;
 const rettungsboote = [];
@@ -716,14 +764,55 @@ function baueLeuchtturm(g){
   return { dreher, lampe, strahl, punktlicht };
 }
 function leuchttuermeSchritt(dt){
+  // Bei Nacht UND bei dichtem Sturm-Nebel soll der Leuchtturm leuchten –
+  // genau wie im echten Leben, wo er ja gerade bei schlechter Sicht hilft.
+  const aktivierung = Math.max(aktuelleNacht, sturm.staerke);
   for(const h of haefen){
     const lt = h.leuchtturm;
     if(!lt) continue;
     lt.dreher.rotation.y += dt*1.1;
-    lt.lampe.material.opacity = aktuelleNacht;
-    lt.strahl.material.opacity = aktuelleNacht*.22;
-    lt.punktlicht.intensity = aktuelleNacht*1.4;
+    lt.lampe.material.opacity = aktivierung;
+    lt.strahl.material.opacity = aktivierung*.22;
+    lt.punktlicht.intensity = aktivierung*1.4;
   }
+}
+
+/* Gut lesbares Hafen-Schild als Leinwand-Textur (Canvas), auf einem Pfosten
+   zur offenen See ausgerichtet – so erkennt man den Hafen schon von Weitem. */
+function baueHafenSchild(g, text, farbe){
+  const canvas = document.createElement("canvas");
+  canvas.width = 640; canvas.height = 360;
+  const ctx = canvas.getContext("2d");
+  // Weißer Grund mit dicker farbiger Umrandung – hoher Kontrast
+  ctx.fillStyle = "#fdf6e3";
+  ctx.fillRect(0, 0, 640, 360);
+  const farbHex = "#" + farbe.toString(16).padStart(6, "0");
+  ctx.strokeStyle = farbHex; ctx.lineWidth = 22;
+  ctx.strokeRect(11, 11, 618, 338);
+  // Schmaler Farbbalken oben, damit die Mitte für den Buchstaben frei bleibt
+  ctx.fillStyle = farbHex;
+  ctx.fillRect(22, 22, 596, 46);
+  // Riesiger, dunkler Buchstabe in der Mitte – maximal lesbar
+  ctx.fillStyle = "#14303c";
+  ctx.font = "900 220px 'Trebuchet MS', Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 320, 210);
+  const textur = new THREE.CanvasTexture(canvas);
+  textur.anisotropy = 8;
+
+  const schildZ = 18.5;
+  // Zwei Pfosten LINKS und RECHTS neben dem Schild, nicht dahinter –
+  // sonst verdeckt der Pfosten genau den Buchstaben in der Mitte.
+  for(const seite of [-1, 1]){
+    const pfosten = new THREE.Mesh(new THREE.CylinderGeometry(.11, .13, 4.0, 9), MAT.holz);
+    pfosten.position.set(seite*2.05, 2.0, schildZ);
+    g.add(pfosten);
+  }
+  const schild = new THREE.Mesh(new THREE.PlaneGeometry(4.3, 2.4),
+    new THREE.MeshBasicMaterial({map: textur, side: THREE.DoubleSide, fog:false}));
+  schild.position.set(0, 4.1, schildZ + .1);   // leicht vor die Pfosten gesetzt
+  g.add(schild);
 }
 
 function baueHafen(x, z, name, flaggenFarbe){
@@ -776,6 +865,7 @@ function baueHafen(x, z, name, flaggenFarbe){
   }
 
   const leuchtturm = baueLeuchtturm(g);
+  baueHafenSchild(g, name.split(" ").pop(), flaggenFarbe);
 
   g.position.set(x, 0, z);
   szene.add(g);
@@ -1167,6 +1257,31 @@ addEventListener("keydown", e => {
 });
 addEventListener("keyup", e => { tasten[e.key.toLowerCase()] = false; });
 
+/* ---------------- Touch-Steuerung fürs Handy ---------------- */
+const touch = { links:false, rechts:false, vor:false, zurueck:false, boost:false };
+function bindHaltKnopf(id, setter){
+  const el = document.getElementById(id);
+  if(!el) return;
+  const an  = e => { e.preventDefault(); setter(true); };
+  const aus = e => { e.preventDefault(); setter(false); };
+  el.addEventListener("pointerdown", an);
+  el.addEventListener("pointerup", aus);
+  el.addEventListener("pointerleave", aus);
+  el.addEventListener("pointercancel", aus);
+  el.addEventListener("contextmenu", e => e.preventDefault());
+}
+bindHaltKnopf("mLinks",    v => touch.links = v);
+bindHaltKnopf("mRechts",   v => touch.rechts = v);
+bindHaltKnopf("mVor",      v => touch.vor = v);
+bindHaltKnopf("mZurueck",  v => touch.zurueck = v);
+bindHaltKnopf("mBoost",    v => touch.boost = v);
+document.getElementById("mHupe")?.addEventListener("pointerdown", e => { e.preventDefault(); hupe(); });
+document.getElementById("mHupe")?.addEventListener("contextmenu", e => e.preventDefault());
+// Steuerkreuz nur auf Touch-Geräten einblenden, damit es am Desktop nicht stört
+if("ontouchstart" in window || navigator.maxTouchPoints > 0){
+  document.getElementById("mobileSteuerung")?.classList.add("aktiv");
+}
+
 /* ---------------- Gamepad-API ---------------- */
 const mapping = { lenk:null, gas:null, rueck:null, boost:null };
 let hupenGedrueckt = false;
@@ -1191,8 +1306,8 @@ function aktuelleLenkung(){
     }
   }
   let s = 0;
-  if(tasten["arrowleft"]||tasten["a"]) s -= 1;
-  if(tasten["arrowright"]||tasten["d"]) s += 1;
+  if(tasten["arrowleft"]||tasten["a"]||touch.links) s -= 1;
+  if(tasten["arrowright"]||tasten["d"]||touch.rechts) s += 1;
   return s;
 }
 function aktuellerSchub(){
@@ -1203,7 +1318,7 @@ function aktuellerSchub(){
       const {ruhe, voll} = mapping.gas;
       vor = THREE.MathUtils.clamp((v-ruhe)/((voll-ruhe)||1), 0, 1);
     }
-  } else if(tasten["arrowup"]||tasten["w"]) vor = 1;
+  } else if(tasten["arrowup"]||tasten["w"]||touch.vor) vor = 1;
 
   let zurueck = 0;
   if(mapping.rueck){
@@ -1219,11 +1334,11 @@ function aktuellerSchub(){
       }
     }
   }
-  if(tasten["arrowdown"]||tasten["s"]) zurueck = Math.max(zurueck, .7);
+  if(tasten["arrowdown"]||tasten["s"]||touch.zurueck) zurueck = Math.max(zurueck, .7);
   return zurueck > .05 ? -zurueck * .7 : vor;
 }
 function boostGedrueckt(){
-  if(tasten["e"]) return true;
+  if(tasten["e"]||touch.boost) return true;
   if(mapping.boost){
     const p = lesePads().find(p => p.index===mapping.boost.pad);
     if(p && p.buttons[mapping.boost.knopf] && p.buttons[mapping.boost.knopf].pressed) return true;
@@ -1476,13 +1591,96 @@ const hudGaeste = document.getElementById("hudGaeste");
 const hudBoost = document.getElementById("hudBoost");
 const uhr = new THREE.Clock();
 
+/* Ziel-Pfeile: schweben über dem Schiff und zeigen zur Richtung jedes
+   Zielhafens, den aktuell an Bord befindliche Fahrgäste ansteuern wollen.
+   Bis zu drei verschiedene Ziele werden gleichzeitig angezeigt, übereinander
+   gestapelt, jeweils in der Flaggenfarbe des Zielhafens eingefärbt. */
+const ZIEL_PFEIL_MAX = 3;
+const zielPfeile = [];
+function baueZielPfeil(){
+  const g = new THREE.Group();
+  const koerper = new THREE.Mesh(new THREE.ConeGeometry(.4, 1.3, 4),
+    new THREE.MeshBasicMaterial({color:0xffffff, fog:false}));
+  koerper.rotation.x = Math.PI/2;   // Spitze zeigt jetzt entlang +Z
+  g.add(koerper);
+  const schaft = new THREE.Mesh(new THREE.CylinderGeometry(.09, .09, .8, 8),
+    new THREE.MeshBasicMaterial({color:0xffffff, fog:false}));
+  schaft.rotation.x = Math.PI/2;
+  schaft.position.z = -.9;
+  g.add(schaft);
+  g.visible = false;
+  szene.add(g);
+  return {g, koerper, schaft};
+}
+for(let i=0;i<ZIEL_PFEIL_MAX;i++) zielPfeile.push(baueZielPfeil());
+
+function aktualisiereZielPfeile(){
+  const ziele = [...new Set(spiel.gaeste.map(g => g.ziel))].slice(0, ZIEL_PFEIL_MAX);
+  zielPfeile.forEach((pfeil, i) => {
+    const ziel = ziele[i];
+    pfeil.g.visible = !!ziel && !spiel.sinkt;
+    if(ziel){
+      pfeil.ziel = ziel;
+      pfeil.koerper.material.color.set(ziel.flagge);
+      pfeil.schaft.material.color.set(ziel.flagge);
+    }
+  });
+}
+function zielPfeileSchritt(t){
+  for(let i=0;i<zielPfeile.length;i++){
+    const pfeil = zielPfeile[i];
+    if(!pfeil.g.visible) continue;
+    const bearing = Math.atan2(pfeil.ziel.x-spiel.x, pfeil.ziel.z-spiel.z);
+    pfeil.g.rotation.y = bearing;
+    pfeil.g.position.set(spiel.x, 6.2 + i*1.15 + Math.sin(t*1.6+i)*.12, spiel.z);
+  }
+}
+
+/* Fahrgäste laufen während der Fahrt gemütlich auf ihrem Stück Deck herum,
+   statt nur starr zu stehen – jeder pendelt in der Nähe seines Platzes. */
+function gaesteWanderSchritt(schiffObj, dt, t){
+  schiffObj.gaesteFiguren.forEach((f, i) => {
+    if(!f.visible) return;
+    const w = schiffObj.wanderZiel[i];
+    const dx = w.zielX - f.position.x, dz = w.zielZ - f.position.z;
+    const d = Math.hypot(dx, dz);
+    if(d < .15){
+      w.wartezeit -= dt;
+      if(w.wartezeit <= 0){
+        w.zielX = w.heimX + (Math.random()-.5)*.8;
+        w.zielZ = w.heimZ + (Math.random()-.5)*1.7;
+        w.wartezeit = 1.5 + Math.random()*3.5;
+      }
+    } else {
+      const tempo = .45;
+      f.position.x += (dx/d)*tempo*dt;
+      f.position.z += (dz/d)*tempo*dt;
+      f.rotation.y = Math.atan2(dx, dz);
+      f.position.y = 2.28 + Math.abs(Math.sin(t*7 + i*2))*.025;   // kleines Lauf-Wippen
+    }
+  });
+}
+
 function aktualisiereGaesteFiguren(){
   hudGaeste.textContent = spiel.gaeste.length;
   schiff.gaesteFiguren.forEach((f, i) => {
     const gast = spiel.gaeste[i];
+    const wardSichtbar = f.visible;
     f.visible = !!gast;
-    if(gast) f.userData.mat.color.set(gast.ziel.flagge);
+    if(gast){
+      f.userData.mat.color.set(gast.ziel.flagge);
+      if(!wardSichtbar){
+        // Frisch zugestiegen: sauber am Heimatplatz starten, statt an der
+        // Stelle, wo der vorherige Fahrgast zuletzt herumgelaufen ist.
+        const w = schiff.wanderZiel[i];
+        f.position.set(w.heimX, 2.28, w.heimZ);
+        f.rotation.y = 0;
+        w.zielX = w.heimX; w.zielZ = w.heimZ;
+        w.wartezeit = .8 + Math.random()*2;
+      }
+    }
   });
+  aktualisiereZielPfeile();
 }
 
 /* ---------------- Trümmer-System ----------------
@@ -1664,6 +1862,7 @@ function naechsterHafen(x, z){
 function starteUntergang(grund){
   if(spiel.sinkt) return;
   setzeSchiffslichter(schiff, 0);   // Stromausfall
+  for(const pfeil of zielPfeile) pfeil.g.visible = false;
   // Laufende Verladeanimationen (Seil + Fahrgäste) sofort abbrechen
   for(const anim of verladeAnimationen){
     szene.remove(anim.seil);
@@ -1953,8 +2152,14 @@ function schrittLoop(){
   /* Rauch aus den Kaminen altern lassen */
   rauchSchritt(dt);
 
+  /* Fahrgäste laufen auf dem Deck herum, solange das Schiff über Wasser ist */
+  if(!spiel.sinkt) gaesteWanderSchritt(schiff, dt, t);
+
   /* Leuchttürme drehen sich und blenden nachts auf */
   leuchttuermeSchritt(dt);
+
+  /* Ziel-Pfeile über dem Schiff dem Ziel entgegendrehen */
+  zielPfeileSchritt(t);
 
   /* Verladeanimationen (Seil + laufende Fahrgäste) unabhängig weiterlaufen lassen */
   verladeSchritt(t);
@@ -2037,17 +2242,20 @@ function schrittLoop(){
         }
       }
 
-      /* Automatisches Anlegen: in Hafennähe bremst und zieht sich das
-         Schiff von selbst zur Anlegestelle, damit man nicht mehr exakt
-         manövrieren muss – nur noch grob hinsteuern reicht. */
-      for(const h of haefen){
-        const dd = Math.hypot(nx-h.dockX, nz-h.dockZ);
-        if(dd < 16){
-          const staerke = (16-dd)/16;
-          spiel.tempo *= Math.max(0, 1 - staerke*dt*3.5);
-          const zug = staerke*staerke*Math.min(1, dt*4.5);
-          nx += (h.dockX-nx)*zug;
-          nz += (h.dockZ-nz)*zug;
+      /* Automatisches Anlegen: nur wenn man gerade NICHT aktiv Gas gibt
+         (also andocken will), bremst und zieht sich das Schiff sanft zur
+         Anlegestelle. Sobald man Vollgas gibt, lässt die Hilfe sofort los –
+         so kommt man immer problemlos wieder vom Hafen weg. */
+      if(Math.abs(schub) < .22){
+        for(const h of haefen){
+          const dd = Math.hypot(nx-h.dockX, nz-h.dockZ);
+          if(dd < 13){
+            const staerke = (13-dd)/13;
+            spiel.tempo *= Math.max(0, 1 - staerke*dt*2.2);
+            const zug = staerke*staerke*Math.min(1, dt*3);
+            nx += (h.dockX-nx)*zug;
+            nz += (h.dockZ-nz)*zug;
+          }
         }
       }
 
