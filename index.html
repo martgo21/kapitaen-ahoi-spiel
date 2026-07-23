@@ -755,9 +755,28 @@ function baueUBoot(){
   wurzel.add(scheinwerfer, scheinwerferZiel);
   scheinwerfer.target = scheinwerferZiel;
 
+  // Fahrgäste sitzen oben auf dem Rumpf (an Deck, wie bei einem Ausflugs-U-Boot)
+  const gaesteFiguren = [];
+  const wanderZiel = [];
+  const plaetze = [];
+  for(let i=0;i<9;i++) plaetze.push([(i%2? .4:-.4), -2.2 + i*(4.4/8)]);
+  for(let i=0;i<plaetze.length;i++){
+    const f = baueFigur(0xffffff);
+    f.position.set(plaetze[i][0], .95, plaetze[i][1]);
+    f.scale.setScalar(.8);
+    f.visible = false;
+    wurzel.add(f);
+    gaesteFiguren.push(f);
+    wanderZiel.push({
+      heimX: plaetze[i][0], heimZ: plaetze[i][1],
+      zielX: plaetze[i][0], zielZ: plaetze[i][1],
+      wartezeit: Math.random()*3
+    });
+  }
+
   wurzel.scale.setScalar(SCHIFF_SKALA*.9);
   szene.add(wurzel);
-  return { wurzel, bug: wurzel, heck: wurzel, schornsteine: [], boote: [], gaesteFiguren: [], lichter: [], wanderZiel: [] };
+  return { wurzel, bug: wurzel, heck: wurzel, schornsteine: [], boote: [], gaesteFiguren, lichter: [], wanderZiel };
 }
 
 /* ---------------- Wasserflugzeug ----------------
@@ -1447,6 +1466,7 @@ function mpHoleSpieler(id, farbe){
       fahrzeugTyp: "titanic",
       schiff: baueSchiffFuerTyp("titanic", farbe),
       x:0, z:0, richtung:0, zielX:0, zielZ:0, zielRichtung:0,
+      tiefe:0, zielTiefe:0, hoehe:0, zielHoehe:0,
       sinkt:false, sinkZeit:0, gebrochen:false, sinkVy:0,
       abwurfZeiten:[0,0,0,0], bruchZeit:99,
       bugEintrag:null, heckEintrag:null, ruheZeit:0,
@@ -1477,6 +1497,7 @@ function mpEmpfangeZustand(msg){
   }
 
   p.zielX = msg.x; p.zielZ = msg.z; p.zielRichtung = msg.richtung;
+  p.zielTiefe = msg.tiefe || 0; p.zielHoehe = msg.hoehe || 0;
   if(msg.sinkt && !p.sinkt){
     // Mitspieler beginnt zu sinken – exakt dieselbe Sequenz wie beim Spieler
     setzeSchiffslichter(p.schiff, 0);
@@ -1503,7 +1524,7 @@ let mpLetzteSendeZeit = 0;
 function mpSendeZustand(t){
   if(!mpVerbunden || t - mpLetzteSendeZeit < .1) return;
   mpLetzteSendeZeit = t;
-  mpSocket.send(JSON.stringify({typ:"zustand", x:spiel.x, z:spiel.z, richtung:spiel.richtung, sinkt:spiel.sinkt, fahrzeugTyp}));
+  mpSocket.send(JSON.stringify({typ:"zustand", x:spiel.x, z:spiel.z, richtung:spiel.richtung, sinkt:spiel.sinkt, fahrzeugTyp, tiefe:spiel.tiefe, hoehe:spiel.hoehe}));
 }
 function mpSendeHupe(){
   if(mpVerbunden) mpSocket.send(JSON.stringify({typ:"hupe"}));
@@ -1529,13 +1550,23 @@ function mpSchritt(dt, t){
       // Nach dem Brechen übernimmt das gemeinsame truemmerSchritt() automatisch
     } else {
       const w = p.schiff.wurzel;
-      w.position.set(p.x, .05 + wellenHoehe(p.x, p.z, t)*.35, p.z);
+      p.tiefe += (p.zielTiefe - p.tiefe) * f;
+      p.hoehe += (p.zielHoehe - p.hoehe) * f;
+      if(p.fahrzeugTyp === "uboot"){
+        w.position.set(p.x, .1 - p.tiefe, p.z);
+      } else if(p.fahrzeugTyp === "wasserflugzeug"){
+        const amWasser = p.hoehe <= .05;
+        w.position.set(p.x, amWasser ? 1.2 + wellenHoehe(p.x, p.z, t)*.35 : p.hoehe, p.z);
+      } else {
+        w.position.set(p.x, .05 + wellenHoehe(p.x, p.z, t)*.35, p.z);
+      }
       w.rotation.y = p.richtung;
       w.rotation.z = Math.sin(t*1.1 + p.x)*.04*wellenFaktor;
       w.rotation.x = Math.sin(t*.9 + p.z)*.03*wellenFaktor;
       const rvx = dt > 0 ? (p.x-vorX)/dt : 0, rvz = dt > 0 ? (p.z-vorZ)/dt : 0;
       emittiereRauch(p.schiff, rvx, rvz);
       setzeSchiffslichter(p.schiff, aktuelleNacht);
+      if(p.schiff.propeller) p.schiff.propeller.rotation.z += dt*18;
     }
 
     // Wer schon 12 s nichts mehr gesendet hat, ist wohl weg (z.B. Tab geschlossen ohne "close")
@@ -1752,8 +1783,8 @@ function zeigeStart(){
     <button class="knopf" id="wConcordia">🛳️ Costa Concordia</button>
     <button class="knopf" id="wUboot">🤿 U-Boot <span class="klein">(Wracks ansehen)</span></button>
     <button class="knopf" id="wFlugzeug">🛩️ Wasserflugzeug</button>
-    <p class="klein">Das U-Boot kann tauchen und die gesunkenen Wracks am Meeresgrund
-    besuchen – dafür braucht es aber keine Fahrgäste und keine Häfen. Das
+    <p class="klein">Alle vier können Fahrgäste mitnehmen und an Häfen anlegen. Das U-Boot
+    kann zusätzlich tauchen und gesunkene Wracks am Meeresgrund besuchen. Das
     Wasserflugzeug kann bei genug Fahrt abheben und über Gefahren hinwegfliegen.</p>`;
   document.getElementById("wTitanic").onclick = () => { fahrzeugTyp = "titanic"; zeigeCockpitIntro(); };
   document.getElementById("wConcordia").onclick = () => { fahrzeugTyp = "concordia"; zeigeCockpitIntro(); };
@@ -1764,7 +1795,9 @@ function zeigeCockpitIntro(){
   const anzahl = lesePads().length;
   let zusatz;
   if(fahrzeugTyp === "uboot"){
-    zusatz = `<p class="klein">Zum Tauchen brauchst du noch eine Taste/Achse für die Tiefe –
+    zusatz = `<p>Bring die <b>Fahrgäste</b> zu ihrem Zielhafen – und wenn du magst,
+       tauche zwischendurch runter und schau dir gesunkene Wracks am Meeresgrund an.
+       Zum Tauchen brauchst du noch eine Taste/Achse für die Tiefe –
        das fragen wir im Cockpit-Check gleich mit ab.</p>`;
   } else if(fahrzeugTyp === "wasserflugzeug"){
     zusatz = `<p>Bring die <b>Fahrgäste</b> zu ihrem Zielhafen – wie mit dem Schiff, nur
@@ -2012,6 +2045,7 @@ function zeigeUntergang(){
       <div class="gross">🧊🤿💦</div>
       <h2>Havarie! Das U-Boot ist gesunken!</h2>
       <p>${grundText}<br>Es kippte zur Seite und sank auf den Meeresgrund …<br>
+      ${gaeste>0 ? `<b>Aber:</b> Alle ${gaeste} Fahrgäste konnten schwimmend das nächste Ufer erreichen! 🏊<br>` : ""}
       <span class="klein">Das Wrack bleibt für immer dort liegen – schau es dir beim nächsten Tauchgang an!</span></p>
       <button class="knopf" id="btnReset">🔁 Neues U-Boot!</button>
       <p class="klein">Gesammelte Sterne bleiben dir erhalten. ⭐</p>`;
@@ -2392,7 +2426,7 @@ function starteUntergang(grund){
     spiel.ubootWrack = eintrag;
     spritzer(spiel.x, schiff.wurzel.position.y, spiel.z, 14, 5);
 
-    if(fahrzeugTyp === "wasserflugzeug"){
+    if(schiff.boote.length === 0){
       // Keine Rettungsboote an Bord – alle Fahrgäste schwimmen selbst zum
       // nächsten Hafen.
       spiel.gaeste.forEach((gast, i) => {
@@ -2847,7 +2881,7 @@ function schrittLoop(){
          Anlegestelle. Sobald man Vollgas gibt, lässt die Hilfe sofort los –
          so kommt man immer problemlos wieder vom Hafen weg. Das U-Boot legt
          nicht an – es transportiert ja keine Fahrgäste. */
-      if(fahrzeugTyp !== "uboot" && Math.abs(schub) < .22){
+      if(Math.abs(schub) < .22){
         for(const h of haefen){
           const dd = Math.hypot(nx-h.dockX, nz-h.dockZ);
           if(dd < 13){
@@ -2880,7 +2914,7 @@ function schrittLoop(){
         if(wunschDelta > 0 && spiel.tempo < 6) wunschDelta = 0;
         spiel.hoehe = THREE.MathUtils.clamp(spiel.hoehe + wunschDelta, 0, 22);
         const amWasser = spiel.hoehe <= .05;
-        w.position.set(spiel.x, amWasser ? .05 + wellenHoehe(spiel.x, spiel.z, t)*.35 : spiel.hoehe, spiel.z);
+        w.position.set(spiel.x, amWasser ? 1.2 + wellenHoehe(spiel.x, spiel.z, t)*.35 : spiel.hoehe, spiel.z);
         w.rotation.y = spiel.richtung;
         w.rotation.x += (steig*.22 - w.rotation.x) * Math.min(1, dt*2);
         w.rotation.z = lenkung * -.32;
@@ -2903,7 +2937,7 @@ function schrittLoop(){
       emittiereRauch(schiff, Math.sin(spiel.richtung)*-spiel.tempo, Math.cos(spiel.richtung)*-spiel.tempo);
       setzeSchiffslichter(schiff, aktuelleNacht);
 
-      if(fahrzeugTyp !== "uboot") hafenSchritt(dt);
+      hafenSchritt(dt);
 
       for(const s of sterne){
         if(!s.visible) continue;

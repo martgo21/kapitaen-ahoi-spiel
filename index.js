@@ -55,7 +55,7 @@ wss.on("connection", (ws) => {
     if (!p) return;
 
     if (msg.typ === "zustand") {
-      p.state = { x: msg.x, z: msg.z, richtung: msg.richtung, sinkt: !!msg.sinkt, fahrzeugTyp: msg.fahrzeugTyp || "titanic" };
+      p.state = { x: msg.x, z: msg.z, richtung: msg.richtung, sinkt: !!msg.sinkt, fahrzeugTyp: msg.fahrzeugTyp || "titanic", tiefe: msg.tiefe || 0, hoehe: msg.hoehe || 0 };
       broadcast({ typ: "zustand", id, farbe: p.farbe, ...p.state }, ws);
     } else if (msg.typ === "hupe") {
       broadcast({ typ: "hupe", id }, ws);
