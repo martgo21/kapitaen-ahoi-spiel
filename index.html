@@ -379,9 +379,10 @@ function baueFischSchwarm(x, z, tiefe, anzahl){
   }
   fischSchwaerme.push(schwarm);
 }
-// Schwärme über die ganze Karte verteilt, in unterschiedlichen Tiefen
-for(let i=0;i<26;i++){
-  baueFischSchwarm((Math.random()-.5)*440, (Math.random()-.5)*440, 3+Math.random()*16, 7+Math.floor(Math.random()*7));
+// Schwärme über die ganze Karte verteilt – viele, und meist in eher
+// flacher Tiefe, damit man beim Tauchen schnell auf welche trifft.
+for(let i=0;i<55;i++){
+  baueFischSchwarm((Math.random()-.5)*440, (Math.random()-.5)*440, 1.5+Math.random()*9, 8+Math.floor(Math.random()*8));
 }
 function fischSchritt(dt, t){
   for(const schwarm of fischSchwaerme){
@@ -2654,16 +2655,20 @@ function schrittLoop(){
     let nz = spiel.z + Math.cos(spiel.richtung) * -spiel.tempo * dt
            + sturm.windZ * sturm.staerke * dt * 2.4;
 
-    /* Eisberg = Untergang! (gilt jetzt für alle Fahrzeuge, auch das U-Boot) */
+    /* Eisberg = Untergang! Ein Eisberg ragt aber nur ein Stück unter die
+       Wasseroberfläche – taucht das U-Boot tief genug, geht es einfach
+       drunter durch, statt gegen eine unendlich tiefe Wand zu krachen. */
     for(const berg of eisberge){
-      if(Math.hypot(nx-berg.x, nz-berg.z) < berg.r + SCHIFF_RADIUS*.55){
+      const eisTiefeGenug = fahrzeugTyp === "uboot" && spiel.tiefe > berg.r*1.7;
+      if(!eisTiefeGenug && Math.hypot(nx-berg.x, nz-berg.z) < berg.r + SCHIFF_RADIUS*.55){
         spiel.x = nx; spiel.z = nz;
         starteUntergang("eisberg");
         break;
       }
     }
-    /* NPC gerammt? Dann sinken BEIDE Schiffe! (gilt auch fürs U-Boot) */
-    if(!spiel.sinkt){
+    /* NPC gerammt? Dann sinken BEIDE Schiffe! Auch das gilt nur nah an der
+       Oberfläche – ein tief tauchendes U-Boot fährt gefahrlos darunter durch. */
+    if(!spiel.sinkt && (fahrzeugTyp !== "uboot" || spiel.tiefe < 3.5)){
       for(const npc of [...npcSchiffe]){
         const d = Math.hypot(nx-npc.x, nz-npc.z);
         if(d < 4){
