@@ -759,9 +759,105 @@ function baueUBoot(){
   szene.add(wurzel);
   return { wurzel, bug: wurzel, heck: wurzel, schornsteine: [], boote: [], gaesteFiguren: [], lichter: [], wanderZiel: [] };
 }
+
+/* ---------------- Wasserflugzeug ----------------
+   Kleiner Doppeldecker-Schwimmer: Rumpf, zwei Tragflächen, zwei lange
+   Schwimmer unterm Rumpf, Leitwerk hinten, ein sich drehender Propeller
+   vorn. Kann Fahrgäste mitnehmen und an Häfen andocken wie die Schiffe –
+   nur eben auch fliegen, sobald genug Fahrt aufgenommen ist. */
+function baueWasserflugzeug(){
+  const wurzel = new THREE.Group();
+  const rumpfMat = new THREE.MeshPhongMaterial({color:0xf4efe4, flatShading:true});
+  const streifenMat = new THREE.MeshPhongMaterial({color:0x3f74d1, flatShading:true});
+  const dunkel = new THREE.MeshPhongMaterial({color:0x2a2f36, flatShading:true});
+
+  const rumpf = new THREE.Mesh(new THREE.CylinderGeometry(.55, .55, 4.6, 14), rumpfMat);
+  rumpf.rotation.x = Math.PI/2; wurzel.add(rumpf);
+  const nase = new THREE.Mesh(new THREE.SphereGeometry(.55, 12, 8), rumpfMat);
+  nase.position.z = -2.3; wurzel.add(nase);
+  const heckSpitze = new THREE.Mesh(new THREE.ConeGeometry(.4, 1.1, 12), rumpfMat);
+  heckSpitze.rotation.x = Math.PI/2; heckSpitze.position.z = 2.85; wurzel.add(heckSpitze);
+  const streifen = new THREE.Mesh(new THREE.CylinderGeometry(.57, .57, 1.2, 14), streifenMat);
+  streifen.rotation.x = Math.PI/2; streifen.position.z = .2; wurzel.add(streifen);
+
+  // Tragflächen
+  const fluegel = new THREE.Mesh(new THREE.BoxGeometry(7.6, .16, 1.15), rumpfMat);
+  fluegel.position.set(0, .55, -.4); wurzel.add(fluegel);
+  const strebe1 = new THREE.Mesh(new THREE.CylinderGeometry(.05,.05,.9,6), dunkel);
+  strebe1.position.set(0, .1, -.4); wurzel.add(strebe1);
+
+  // Leitwerk
+  const seitenleitwerk = new THREE.Mesh(new THREE.BoxGeometry(.1, 1.1, 1.0), rumpfMat);
+  seitenleitwerk.position.set(0, .85, 2.9); wurzel.add(seitenleitwerk);
+  const hoehenleitwerk = new THREE.Mesh(new THREE.BoxGeometry(2.6, .1, .8), rumpfMat);
+  hoehenleitwerk.position.set(0, .3, 2.9); wurzel.add(hoehenleitwerk);
+
+  // Zwei lange Schwimmer unterm Rumpf, mit Streben verbunden
+  const schwimmer = [];
+  for(const seite of [-1,1]){
+    const boot = new THREE.Mesh(new THREE.CylinderGeometry(.22,.22,4.0,10), dunkel);
+    boot.rotation.x = Math.PI/2; boot.position.set(seite*1.5, -1.15, -.1); wurzel.add(boot);
+    const bootNase = new THREE.Mesh(new THREE.ConeGeometry(.22,.6,10), dunkel);
+    bootNase.rotation.x = -Math.PI/2; bootNase.position.set(seite*1.5, -1.15, -2.1); wurzel.add(bootNase);
+    for(const zz of [-1.2, 1.2]){
+      const strebe = new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,1.05,6), dunkel);
+      strebe.position.set(seite*1.5, -.6, zz); wurzel.add(strebe);
+    }
+    schwimmer.push(boot);
+  }
+
+  // Propeller vorn – dreht sich mit dem Tempo
+  const propellerNabe = new THREE.Group();
+  propellerNabe.position.set(0, 0, -2.85);
+  for(let i=0;i<3;i++){
+    const blatt = new THREE.Mesh(new THREE.BoxGeometry(.12, 1.1, .04), dunkel);
+    blatt.rotation.z = i*(Math.PI*2/3);
+    propellerNabe.add(blatt);
+  }
+  wurzel.add(propellerNabe);
+
+  // Positionslichter an den Flügelspitzen + Hecklicht
+  const lichter = [];
+  function licht(x,y,z,farbe,groesse){
+    const m = new THREE.Mesh(new THREE.SphereGeometry(groesse,6,5),
+      new THREE.MeshBasicMaterial({color:farbe, transparent:true, opacity:0, fog:false}));
+    m.position.set(x,y,z); wurzel.add(m); lichter.push(m);
+  }
+  licht(-3.85, .55, -.4, 0xff3b30, .09);
+  licht( 3.85, .55, -.4, 0x3ddc4a, .09);
+  licht(0, .85, 3.3, 0xfff2cf, .08);
+
+  // Fahrgäste sitzen in einer kleinen Kabine auf dem Rumpf
+  const gaesteFiguren = [];
+  const wanderZiel = [];
+  const plaetze = [];
+  for(let i=0;i<9;i++) plaetze.push([(i%2? .28:-.28), -1.6 + i*(2.6/8)]);
+  for(let i=0;i<plaetze.length;i++){
+    const f = baueFigur(0xffffff);
+    f.position.set(plaetze[i][0], .95, plaetze[i][1]);
+    f.scale.setScalar(.75);
+    f.visible = false;
+    wurzel.add(f);
+    gaesteFiguren.push(f);
+    wanderZiel.push({
+      heimX: plaetze[i][0], heimZ: plaetze[i][1],
+      zielX: plaetze[i][0], zielZ: plaetze[i][1],
+      wartezeit: Math.random()*3
+    });
+  }
+
+  wurzel.scale.setScalar(SCHIFF_SKALA*.85);
+  szene.add(wurzel);
+  return {
+    wurzel, bug: wurzel, heck: wurzel, schornsteine: [], boote: [], gaesteFiguren, lichter, wanderZiel,
+    propeller: propellerNabe
+  };
+}
+
 function baueAktuellesSchiff(){
   if(fahrzeugTyp === "concordia") return baueConcordia();
   if(fahrzeugTyp === "uboot") return baueUBoot();
+  if(fahrzeugTyp === "wasserflugzeug") return baueWasserflugzeug();
   return baueSchiffVoll(0x9c2b1f);
 }
 let schiff = baueAktuellesSchiff();
@@ -1340,6 +1436,7 @@ function mpVerbinden(){
 function baueSchiffFuerTyp(typ, farbe){
   if(typ === "concordia") return baueConcordia();
   if(typ === "uboot") return baueUBoot();
+  if(typ === "wasserflugzeug") return baueWasserflugzeug();
   return baueSchiffVoll(farbe || 0x999999);
 }
 function mpHoleSpieler(id, farbe){
@@ -1644,7 +1741,7 @@ const wizard = document.getElementById("wizard");
 const karte = document.getElementById("karteInhalt");
 let wizardAktiv = true, wizardAbbruch = null;
 
-const FAHRZEUG_NAMEN = { titanic:"Titanic", concordia:"Costa Concordia", uboot:"U-Boot" };
+const FAHRZEUG_NAMEN = { titanic:"Titanic", concordia:"Costa Concordia", uboot:"U-Boot", wasserflugzeug:"Wasserflugzeug" };
 function zeigeStart(){
   wizardAktiv = true; wizard.classList.remove("versteckt");
   karte.innerHTML = `
@@ -1654,21 +1751,31 @@ function zeigeStart(){
     <button class="knopf" id="wTitanic">🚢 Titanic</button>
     <button class="knopf" id="wConcordia">🛳️ Costa Concordia</button>
     <button class="knopf" id="wUboot">🤿 U-Boot <span class="klein">(Wracks ansehen)</span></button>
+    <button class="knopf" id="wFlugzeug">🛩️ Wasserflugzeug</button>
     <p class="klein">Das U-Boot kann tauchen und die gesunkenen Wracks am Meeresgrund
-    besuchen – dafür braucht es aber keine Fahrgäste und keine Häfen.</p>`;
+    besuchen – dafür braucht es aber keine Fahrgäste und keine Häfen. Das
+    Wasserflugzeug kann bei genug Fahrt abheben und über Gefahren hinwegfliegen.</p>`;
   document.getElementById("wTitanic").onclick = () => { fahrzeugTyp = "titanic"; zeigeCockpitIntro(); };
   document.getElementById("wConcordia").onclick = () => { fahrzeugTyp = "concordia"; zeigeCockpitIntro(); };
   document.getElementById("wUboot").onclick = () => { fahrzeugTyp = "uboot"; zeigeCockpitIntro(); };
+  document.getElementById("wFlugzeug").onclick = () => { fahrzeugTyp = "wasserflugzeug"; zeigeCockpitIntro(); };
 }
 function zeigeCockpitIntro(){
   const anzahl = lesePads().length;
-  const zusatz = fahrzeugTyp === "uboot"
-    ? `<p class="klein">Zum Tauchen brauchst du noch eine Taste/Achse für die Tiefe –
-       das fragen wir im Cockpit-Check gleich mit ab.</p>`
-    : `<p>Bring die <b>Fahrgäste</b> zu ihrem Zielhafen – ihre <b>Farbe</b> verrät,
+  let zusatz;
+  if(fahrzeugTyp === "uboot"){
+    zusatz = `<p class="klein">Zum Tauchen brauchst du noch eine Taste/Achse für die Tiefe –
+       das fragen wir im Cockpit-Check gleich mit ab.</p>`;
+  } else if(fahrzeugTyp === "wasserflugzeug"){
+    zusatz = `<p>Bring die <b>Fahrgäste</b> zu ihrem Zielhafen – wie mit dem Schiff, nur
+       schneller: bei genug Fahrt kannst du <b>abheben</b> und über Eisberge und
+       Schiffe hinwegfliegen! Dafür brauchst du noch eine Taste/Achse für die Höhe.</p>`;
+  } else {
+    zusatz = `<p>Bring die <b>Fahrgäste</b> zu ihrem Zielhafen – ihre <b>Farbe</b> verrät,
        zu welcher <b>Hafenfahne</b> (A rot, B blau, C grün, D orange) sie wollen.
        Sammle <b>Sterne</b>, weich <b>Eisbergen</b> und anderen Schiffen aus –
        und pass auf: Nachts und bei <b>Sturm</b> wird's ungemütlich! 🌙🌩️</p>`;
+  }
   karte.innerHTML = `
     <div class="gross">🕹️</div>
     <h1>${FAHRZEUG_NAMEN[fahrzeugTyp]}</h1>
@@ -1823,11 +1930,15 @@ function schrittBoost(){
   wizardAbbruch = () => clearInterval(timer);
 }
 function naechsterSchrittNachBoost(){
-  if(fahrzeugTyp === "uboot") schrittTauchen();
+  if(fahrzeugTyp === "uboot" || fahrzeugTyp === "wasserflugzeug") schrittTauchen();
   else zeigeFertig();
 }
 function schrittTauchen(){
-  findeBewegteAchse("Schritt 5: Tauchgang-Achse", "Nur fürs U-Boot: beweg den Hebel/die Achse, die du zum <b>Auf- und Abtauchen</b> benutzen willst – erst in eine Richtung, dann zurück.", "🤿",
+  const label = fahrzeugTyp === "wasserflugzeug" ? "Höhen-Achse" : "Tauchgang-Achse";
+  const beschreibung = fahrzeugTyp === "wasserflugzeug"
+    ? "Nur fürs Wasserflugzeug: beweg den Hebel/die Achse, die du zum <b>Steigen und Sinken</b> benutzen willst – erst in eine Richtung, dann zurück."
+    : "Nur fürs U-Boot: beweg den Hebel/die Achse, die du zum <b>Auf- und Abtauchen</b> benutzen willst – erst in eine Richtung, dann zurück.";
+  findeBewegteAchse("Schritt 5: " + label, beschreibung, "🤿",
     ({pad, achse, start}) => {
       let extrem = start;
       karte.innerHTML = `
@@ -1865,15 +1976,19 @@ function zeigeFertig(){
   const boostText = mapping.boost
     ? "Boost: Knopf " + mapping.boost.knopf + " am " + padName(mapping.boost.pad)
     : "Boost: Taste E";
-  const tauchText = fahrzeugTyp === "uboot"
-    ? "<br><b>" + (mapping.tauchen ? "Tauchen: eigene Achse" : "Tauchen: Taste F (runter) / C (rauf)") + "</b>"
+  const tauchText = (fahrzeugTyp === "uboot" || fahrzeugTyp === "wasserflugzeug")
+    ? "<br><b>" + (mapping.tauchen
+        ? (fahrzeugTyp === "wasserflugzeug" ? "Höhe: eigene Achse" : "Tauchen: eigene Achse")
+        : (fahrzeugTyp === "wasserflugzeug" ? "Höhe: Taste F (runter) / C (rauf, ab genug Fahrt)" : "Tauchen: Taste F (runter) / C (rauf)")) + "</b>"
     : "";
+  let abschlussHinweis = "Und denk dran: Eisbergen ausweichen!";
+  if(fahrzeugTyp === "uboot") abschlussHinweis = "Viel Spaß beim Wracks-Erkunden am Meeresgrund!";
+  if(fahrzeugTyp === "wasserflugzeug") abschlussHinweis = "Erst genug Fahrt aufnehmen, dann abheben!";
   karte.innerHTML = `
     <div class="gross">🎉</div>
     <h2>Alles klar, Kapitän!</h2>
     <p>Lenkrad und Gashebel sind startklar.<br><b>${rueckText}</b><br><b>${boostText}</b>${tauchText}<br>
-    <span class="klein">Jeder andere Knopf hupt das Dampferhorn. 📯
-    ${fahrzeugTyp === "uboot" ? "Viel Spaß beim Wracks-Erkunden am Meeresgrund!" : "Und denk dran: Eisbergen ausweichen!"}</span></p>
+    <span class="klein">Jeder andere Knopf hupt das Dampferhorn. 📯 ${abschlussHinweis}</span></p>
     <button class="knopf" id="btnLos">⚓ Leinen los!</button>`;
   document.getElementById("btnLos").onclick = () => schliesseWizard();
 }
@@ -1900,6 +2015,15 @@ function zeigeUntergang(){
       <span class="klein">Das Wrack bleibt für immer dort liegen – schau es dir beim nächsten Tauchgang an!</span></p>
       <button class="knopf" id="btnReset">🔁 Neues U-Boot!</button>
       <p class="klein">Gesammelte Sterne bleiben dir erhalten. ⭐</p>`;
+  } else if(fahrzeugTyp === "wasserflugzeug"){
+    karte.innerHTML = `
+      <div class="gross">🧊🛩️💦</div>
+      <h2>Abgestürzt! Das Wasserflugzeug ist gesunken!</h2>
+      <p>${grundText}<br>Es kippte zur Seite und sank auf den Meeresgrund …<br>
+      ${gaeste>0 ? `<b>Aber:</b> Alle ${gaeste} Fahrgäste konnten schwimmend das nächste Ufer erreichen! 🏊<br>` : ""}
+      <span class="klein">Das Wrack bleibt für immer dort liegen!</span></p>
+      <button class="knopf" id="btnReset">🔁 Neues Wasserflugzeug!</button>
+      <p class="klein">Gesammelte Sterne bleiben dir erhalten. ⭐</p>`;
   } else {
     karte.innerHTML = `
       <div class="gross">🧊🚢💦</div>
@@ -1922,10 +2046,12 @@ function zeigeFahrzeugSchnellwahl(){
     <p class="klein">Deine Lenkrad-/Gas-/Boost-Einstellungen bleiben erhalten.</p>
     <button class="knopf" id="wsTitanic">🚢 Titanic</button>
     <button class="knopf" id="wsConcordia">🛳️ Costa Concordia</button>
-    <button class="knopf" id="wsUboot">🤿 U-Boot <span class="klein">(Wracks ansehen)</span></button>`;
+    <button class="knopf" id="wsUboot">🤿 U-Boot <span class="klein">(Wracks ansehen)</span></button>
+    <button class="knopf" id="wsFlugzeug">🛩️ Wasserflugzeug</button>`;
   document.getElementById("wsTitanic").onclick = () => { fahrzeugTyp = "titanic"; schliesseWizard(); };
   document.getElementById("wsConcordia").onclick = () => { fahrzeugTyp = "concordia"; schliesseWizard(); };
   document.getElementById("wsUboot").onclick = () => { fahrzeugTyp = "uboot"; schliesseWizard(); };
+  document.getElementById("wsFlugzeug").onclick = () => { fahrzeugTyp = "wasserflugzeug"; schliesseWizard(); };
 }
 document.getElementById("resetBtn").onclick = () => neustart();
 addEventListener("gamepadconnected", () => { aktualisiereChips(); if(wizardAktiv) zeigeStart(); });
@@ -1941,7 +2067,7 @@ function aktualisiereChips(){
 /* ---------------- Spiel-Zustand ---------------- */
 const KAPAZITAET = 9;
 const RAND = 240;
-const spiel = { x:0, z:0, richtung:0, tempo:0, sterne:0, tiefe:0,
+const spiel = { x:0, z:0, richtung:0, tempo:0, sterne:0, tiefe:0, hoehe:0,
                 gaeste: [],                    // [{ziel: hafen}]
                 boostEnergie:1, boostAktiv:false,
                 sinkt:false, sinkZeit:0, gebrochen:false, sinkVy:0,
@@ -2253,9 +2379,9 @@ function starteUntergang(grund){
   spiel.untergangsGrund = grund || "eisberg";
   crashTon();
 
-  if(fahrzeugTyp === "uboot"){
-    // Das U-Boot ist ein einzelnes Bauteil (kein Bug/Heck) – es kippt
-    // einfach zur Seite und sinkt als Ganzes auf den Meeresgrund.
+  if(fahrzeugTyp === "uboot" || fahrzeugTyp === "wasserflugzeug"){
+    // Einzelnes Bauteil (kein Bug/Heck) – kippt einfach zur Seite und
+    // sinkt als Ganzes auf den Meeresgrund.
     spiel.gebrochen = true;   // verhindert, dass alte Titanic-Pfade greifen
     const eintrag = {
       typ: "npcwrack", obj: schiff.wurzel,
@@ -2265,6 +2391,22 @@ function starteUntergang(grund){
     truemmer.push(eintrag);
     spiel.ubootWrack = eintrag;
     spritzer(spiel.x, schiff.wurzel.position.y, spiel.z, 14, 5);
+
+    if(fahrzeugTyp === "wasserflugzeug"){
+      // Keine Rettungsboote an Bord – alle Fahrgäste schwimmen selbst zum
+      // nächsten Hafen.
+      spiel.gaeste.forEach((gast, i) => {
+        const fig = schiff.gaesteFiguren[i];
+        if(!fig || !fig.visible) return;
+        szene.attach(fig);
+        fig.scale.setScalar(.75);
+        schwimmer.push({
+          fig, x: fig.position.x, z: fig.position.z,
+          zielHafen: naechsterHafen(spiel.x, spiel.z),
+          tempo: .55 + Math.random()*.35
+        });
+      });
+    }
     return;
   }
 
@@ -2382,7 +2524,7 @@ function neustart(){
   }
   schiff = baueAktuellesSchiff();
 
-  spiel.x = 0; spiel.z = 0; spiel.richtung = 0; spiel.tempo = 0; spiel.tiefe = 0;
+  spiel.x = 0; spiel.z = 0; spiel.richtung = 0; spiel.tempo = 0; spiel.tiefe = 0; spiel.hoehe = 0;
   spiel.gaeste = []; spiel.boostEnergie = 1; spiel.boostAktiv = false;
   spiel.sinkt = false; spiel.sinkZeit = 0; spiel.gebrochen = false; spiel.sinkVy = 0;
   spiel.bugEintrag = null; spiel.heckEintrag = null;
@@ -2611,7 +2753,7 @@ function schrittLoop(){
   if(spiel.sinkt){
     spiel.sinkZeit += dt;
 
-    if(fahrzeugTyp === "uboot"){
+    if(fahrzeugTyp === "uboot" || fahrzeugTyp === "wasserflugzeug"){
       if(spiel.ubootWrack && spiel.ubootWrack.gelandet){
         spiel.ruheZeit += dt;
         if(!spiel.overlayGezeigt && spiel.ruheZeit > 2){
@@ -2657,18 +2799,20 @@ function schrittLoop(){
 
     /* Eisberg = Untergang! Ein Eisberg ragt aber nur ein Stück unter die
        Wasseroberfläche – taucht das U-Boot tief genug, geht es einfach
-       drunter durch, statt gegen eine unendlich tiefe Wand zu krachen. */
+       drunter durch. Das Wasserflugzeug fliegt hoch genug einfach drüber. */
+    const fliegtHoch = fahrzeugTyp === "wasserflugzeug" && spiel.hoehe > 2.2;
     for(const berg of eisberge){
       const eisTiefeGenug = fahrzeugTyp === "uboot" && spiel.tiefe > berg.r*1.7;
-      if(!eisTiefeGenug && Math.hypot(nx-berg.x, nz-berg.z) < berg.r + SCHIFF_RADIUS*.55){
+      if(!eisTiefeGenug && !fliegtHoch && Math.hypot(nx-berg.x, nz-berg.z) < berg.r + SCHIFF_RADIUS*.55){
         spiel.x = nx; spiel.z = nz;
         starteUntergang("eisberg");
         break;
       }
     }
     /* NPC gerammt? Dann sinken BEIDE Schiffe! Auch das gilt nur nah an der
-       Oberfläche – ein tief tauchendes U-Boot fährt gefahrlos darunter durch. */
-    if(!spiel.sinkt && (fahrzeugTyp !== "uboot" || spiel.tiefe < 3.5)){
+       Oberfläche – ein tief tauchendes U-Boot oder ein hoch fliegendes
+       Wasserflugzeug ist davor sicher. */
+    if(!spiel.sinkt && !fliegtHoch && (fahrzeugTyp !== "uboot" || spiel.tiefe < 3.5)){
       for(const npc of [...npcSchiffe]){
         const d = Math.hypot(nx-npc.x, nz-npc.z);
         if(d < 4){
@@ -2688,7 +2832,7 @@ function schrittLoop(){
       }
     }
     if(!spiel.sinkt){
-      for(const insel of inseln){
+      if(!fliegtHoch) for(const insel of inseln){
         const d = Math.hypot(nx-insel.x, nz-insel.z);
         if(d < insel.r + .8){
           const wx = (nx-insel.x)/d, wz = (nz-insel.z)/d;
@@ -2728,6 +2872,19 @@ function schrittLoop(){
         w.rotation.y = spiel.richtung;
         w.rotation.x += (aktuelleTauchrichtung()*.35 - w.rotation.x) * Math.min(1, dt*2);
         w.rotation.z = lenkung * -.12;
+      } else if(fahrzeugTyp === "wasserflugzeug"){
+        // Höhe per Achse/Tasten steuern – Steigen braucht genug Fahrt,
+        // sonst bleibt man (wie in echt) einfach am Wasser kleben.
+        const steig = -aktuelleTauchrichtung();   // Taste C = steigen, F = sinken
+        let wunschDelta = steig*3.5*dt;
+        if(wunschDelta > 0 && spiel.tempo < 6) wunschDelta = 0;
+        spiel.hoehe = THREE.MathUtils.clamp(spiel.hoehe + wunschDelta, 0, 22);
+        const amWasser = spiel.hoehe <= .05;
+        w.position.set(spiel.x, amWasser ? .05 + wellenHoehe(spiel.x, spiel.z, t)*.35 : spiel.hoehe, spiel.z);
+        w.rotation.y = spiel.richtung;
+        w.rotation.x += (steig*.22 - w.rotation.x) * Math.min(1, dt*2);
+        w.rotation.z = lenkung * -.32;
+        if(schiff.propeller) schiff.propeller.rotation.z += dt*(18 + Math.abs(spiel.tempo)*7);
       } else {
         w.position.set(spiel.x, .05 + wellenHoehe(spiel.x, spiel.z, t)*.35, spiel.z);
         w.rotation.y = spiel.richtung;
@@ -2810,6 +2967,11 @@ function schrittLoop(){
       // Kamera folgt dem U-Boot auch in die Tiefe, statt an der
       // Wasseroberfläche "zurückzubleiben".
       const ky = schiff.wurzel.position.y + 3.2;
+      kamera.position.lerp(new THREE.Vector3(kx, ky, kz), Math.min(1, dt*3));
+      kamera.lookAt(spiel.x, schiff.wurzel.position.y, spiel.z);
+    } else if(fahrzeugTyp === "wasserflugzeug"){
+      // Kamera folgt dem Flugzeug auch beim Steigen mit nach oben.
+      const ky = schiff.wurzel.position.y + 3.5;
       kamera.position.lerp(new THREE.Vector3(kx, ky, kz), Math.min(1, dt*3));
       kamera.lookAt(spiel.x, schiff.wurzel.position.y, spiel.z);
     } else {
