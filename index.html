@@ -167,7 +167,8 @@ szene.add(hemi);
    Zeit seit dem Laden der Seite) – dadurch erleben alle Mitspieler dieselbe
    Tageszeit und denselben Sturm zur selben Zeit, unabhängig davon, wann sie
    die Seite geöffnet haben. */
-function weltzeit(){ return Date.now()/1000; }
+let zeitVersatz = 0;   // Differenz zur Serverzeit, siehe mpVerbinden()
+function weltzeit(){ return (Date.now() + zeitVersatz) / 1000; }
 
 /* ---------------- Tag & Nacht ----------------
    Ein voller Zyklus dauert 150 s: 100 s Tag, 50 s Nacht –
@@ -446,7 +447,10 @@ function baueBullaugen(bug, heck){
   }
 }
 
-function baueSchiffVoll(farbe){
+function baueSchiffVoll(farbe, stil){
+  stil = Object.assign({ rumpf: 0x1b1f24, schornstein: 0xd9a05f }, stil || {});
+  const rumpfMat = new THREE.MeshPhongMaterial({color: stil.rumpf, flatShading:true});
+  const schornsteinMat = new THREE.MeshPhongMaterial({color: stil.schornstein, flatShading:true});
   const wurzel = new THREE.Group();
   const bug  = new THREE.Group();
   const heck = new THREE.Group();
@@ -456,7 +460,7 @@ function baueSchiffVoll(farbe){
 
   for(const [vz, ziel] of [[-2.75, bug],[2.75, heck]]){
     const rumpf = new THREE.Mesh(
-      verjuenge(new THREE.BoxGeometry(2.4, 1.1, 5.5, 1, 1, 5).translate(0,0,vz)), MAT.schwarz);
+      verjuenge(new THREE.BoxGeometry(2.4, 1.1, 5.5, 1, 1, 5).translate(0,0,vz)), rumpfMat);
     rumpf.position.y = .55; ziel.add(rumpf);
     const band = new THREE.Mesh(
       verjuenge(new THREE.BoxGeometry(2.45, .3, 5.5, 1, 1, 5).translate(0,0,vz)), bandMat);
@@ -482,7 +486,7 @@ function baueSchiffVoll(farbe){
   const schornsteine = [];
   for(let i=0;i<4;i++){
     const s = new THREE.Group();
-    const rohr = new THREE.Mesh(new THREE.CylinderGeometry(.3,.36,1.5,16), MAT.beige);
+    const rohr = new THREE.Mesh(new THREE.CylinderGeometry(.3,.36,1.5,16), schornsteinMat);
     const kappe = new THREE.Mesh(new THREE.CylinderGeometry(.31,.31,.28,16), MAT.dunkel);
     kappe.position.y = .85;
     s.add(rohr, kappe);
@@ -538,7 +542,58 @@ function baueSchiffVoll(farbe){
 }
 const SCHIFF_SKALA = 1.18;
 const rettungsboote = [];
-let schiff = baueSchiffVoll(0x9c2b1f);
+let fahrzeugTyp = "titanic";   // "titanic" | "concordia" | "uboot"
+
+/* Kleines, robustes U-Boot zum Wracks-Anschauen. Nutzt bewusst dieselbe
+   Objektform wie die großen Schiffe (leere Arrays für Kamine/Boote/Gäste),
+   damit alle bestehenden Systeme (Rauch, Lichter, Fahrgäste, Verladen)
+   einfach nichts zu tun bekommen, statt überall Sonderfälle zu brauchen. */
+function baueUBoot(){
+  const wurzel = new THREE.Group();
+  const gelb = new THREE.MeshPhongMaterial({color:0xffd23f, flatShading:true});
+  const dunkel = new THREE.MeshPhongMaterial({color:0xc9992a, flatShading:true});
+
+  const rumpf = new THREE.Mesh(new THREE.CylinderGeometry(.85, .85, 5.5, 16), gelb);
+  rumpf.rotation.x = Math.PI/2; wurzel.add(rumpf);
+  const bugKappe = new THREE.Mesh(new THREE.SphereGeometry(.85, 14, 10), gelb);
+  bugKappe.position.z = -2.75; wurzel.add(bugKappe);
+  const heckKappe = new THREE.Mesh(new THREE.SphereGeometry(.68, 14, 10), gelb);
+  heckKappe.position.z = 2.75; wurzel.add(heckKappe);
+
+  const turm = new THREE.Mesh(new THREE.CylinderGeometry(.42, .52, 1.1, 12), dunkel);
+  turm.position.set(0, 1.15, -.6); wurzel.add(turm);
+  const luke = new THREE.Mesh(new THREE.CylinderGeometry(.3, .3, .18, 12), MAT.dunkel);
+  luke.position.set(0, 1.75, -.6); wurzel.add(luke);
+  const periskop = new THREE.Mesh(new THREE.CylinderGeometry(.05, .05, .9, 8), MAT.dunkel);
+  periskop.position.set(0, 2.1, -.6); wurzel.add(periskop);
+
+  for(const seite of [-1, 1]){
+    const flosse = new THREE.Mesh(new THREE.BoxGeometry(1.1, .08, .7), dunkel);
+    flosse.position.set(seite*.9, 0, 2.1); wurzel.add(flosse);
+  }
+  const steuerV = new THREE.Mesh(new THREE.BoxGeometry(.08, 1.3, .7), dunkel);
+  steuerV.position.set(0, 0, 3.05); wurzel.add(steuerV);
+  const steuerH = new THREE.Mesh(new THREE.BoxGeometry(1.3, .08, .7), dunkel);
+  steuerH.position.set(0, 0, 3.05); wurzel.add(steuerH);
+
+  // Bugscheinwerfer, damit man im Dunkeln bzw. unter Wasser die Wracks sieht
+  const scheinwerfer = new THREE.SpotLight(0xfff6da, 1.6, 60, Math.PI/5, .5, 1.1);
+  scheinwerfer.position.set(0, 0, -3.2);
+  const scheinwerferZiel = new THREE.Object3D();
+  scheinwerferZiel.position.set(0, -2, -25);
+  wurzel.add(scheinwerfer, scheinwerferZiel);
+  scheinwerfer.target = scheinwerferZiel;
+
+  wurzel.scale.setScalar(SCHIFF_SKALA*.9);
+  szene.add(wurzel);
+  return { wurzel, bug: wurzel, heck: wurzel, schornsteine: [], boote: [], gaesteFiguren: [], lichter: [], wanderZiel: [] };
+}
+function baueAktuellesSchiff(){
+  if(fahrzeugTyp === "concordia") return baueSchiffVoll(0xffb400, {rumpf:0xf4efe4, schornstein:0x1c3a5e});
+  if(fahrzeugTyp === "uboot") return baueUBoot();
+  return baueSchiffVoll(0x9c2b1f);
+}
+let schiff = baueAktuellesSchiff();
 const SCHIFF_RADIUS = 3.2 * SCHIFF_SKALA;
 
 /* Gemeinsamer Partikel-Topf für Gischt, Blasen, Sandwolken */
@@ -614,46 +669,62 @@ function emittiereRauch(schiffObj, vx, vz){
 /* ---------------- Eisberge (jetzt bis weit hinaus verteilt) ---------------- */
 const eisberge = [];
 const eisMat = new THREE.MeshPhongMaterial({color:0xeaf6fb, flatShading:true, shininess:90, specular:0xffffff});
+function machSeedZufall(seed){
+  // Einfacher LCG-Zufallsgenerator mit festem Startwert – liefert auf
+  // jedem Gerät exakt dieselbe Zahlenfolge (anders als Math.random()).
+  let zustand = seed >>> 0;
+  return function(){
+    zustand = (Math.imul(zustand, 1664525) + 1013904223) >>> 0;
+    return zustand / 4294967296;
+  };
+}
+let eisbergIdx = 0;
 function baueEisberg(x, z, gr){
+  // Alles hier (Form UND Bewegung) hängt nur von einem festen, pro Eisberg
+  // eindeutigen Startwert ab – so sehen und bewegen sich Eisberge auf jedem
+  // angeschlossenen Gerät exakt gleich, ganz ohne Server-Absprache.
+  const zufall = machSeedZufall((eisbergIdx++ * 2654435761 + 12345) >>> 0);
   const g = new THREE.Group();
-  const spitzen = 2 + Math.floor(Math.random()*2);
+  const spitzen = 2 + Math.floor(zufall()*2);
   for(let i=0;i<spitzen;i++){
-    const h = i===0 ? gr*2.1 : gr*(0.8+Math.random()*.8);
-    const r = i===0 ? gr*.95 : gr*(.4+Math.random()*.35);
+    const h = i===0 ? gr*2.1 : gr*(0.8+zufall()*.8);
+    const r = i===0 ? gr*.95 : gr*(.4+zufall()*.35);
     const geo = new THREE.ConeGeometry(r, h, 9, 3);
     const p = geo.attributes.position;
     for(let j=0;j<p.count;j++){
-      p.setX(j, p.getX(j) + (Math.random()-.5)*r*.3);
-      p.setZ(j, p.getZ(j) + (Math.random()-.5)*r*.3);
+      p.setX(j, p.getX(j) + (zufall()-.5)*r*.3);
+      p.setZ(j, p.getZ(j) + (zufall()-.5)*r*.3);
     }
     geo.computeVertexNormals();
     const m = new THREE.Mesh(geo, eisMat);
     m.position.set(
-      i===0 ? 0 : (Math.random()-.5)*gr,
+      i===0 ? 0 : (zufall()-.5)*gr,
       h*.5 - gr*.4,
-      i===0 ? 0 : (Math.random()-.5)*gr);
-    m.rotation.y = Math.random()*Math.PI;
-    m.rotation.z = (Math.random()-.5)*.12;
+      i===0 ? 0 : (zufall()-.5)*gr);
+    m.rotation.y = zufall()*Math.PI;
+    m.rotation.z = (zufall()-.5)*.12;
     g.add(m);
   }
   g.position.set(x, 0, z);
-  g.rotation.y = Math.random()*Math.PI*2;
+  g.rotation.y = zufall()*Math.PI*2;
   szene.add(g);
-  const winkel = Math.random()*Math.PI*2;
-  const geschw = .25 + Math.random()*.5;
   eisberge.push({
     x, z, r: gr*1.1, mesh: g,
-    vx: Math.sin(winkel)*geschw, vz: Math.cos(winkel)*geschw,
-    drehTempo: (Math.random()-.5)*.06
+    heimX: x, heimZ: z,
+    radius: 6 + zufall()*10,
+    freq: .05 + zufall()*.05,
+    phase: zufall()*Math.PI*2,
+    drehTempo: (zufall()-.5)*.06
   });
 }
 function eisbergSchritt(dt, t){
+  const wt = weltzeit();
   for(const berg of eisberge){
-    berg.x += berg.vx*dt;
-    berg.z += berg.vz*dt;
-    // Sanft am Kartenrand umkehren, statt für immer wegzutreiben
-    if(Math.abs(berg.x) > RAND-15) berg.vx *= -1;
-    if(Math.abs(berg.z) > RAND-15) berg.vz *= -1;
+    // Position ist eine reine Funktion der Weltzeit – kein akkumulierter
+    // Drift, der zwischen Geräten auseinanderlaufen könnte.
+    const winkel = wt*berg.freq + berg.phase;
+    berg.x = berg.heimX + Math.sin(winkel)*berg.radius;
+    berg.z = berg.heimZ + Math.cos(winkel)*berg.radius;
     berg.mesh.position.x = berg.x;
     berg.mesh.position.z = berg.z;
     berg.mesh.position.y = wellenHoehe(berg.x, berg.z, t)*.55;
@@ -663,7 +734,7 @@ function eisbergSchritt(dt, t){
     const hierZ = wellenHoehe(berg.x, berg.z+1.2, t), dortZ = wellenHoehe(berg.x, berg.z-1.2, t);
     berg.mesh.rotation.z += ((dortX-hierX)*.09 - berg.mesh.rotation.z) * Math.min(1, dt*2);
     berg.mesh.rotation.x += ((dortZ-hierZ)*.09 - berg.mesh.rotation.x) * Math.min(1, dt*2);
-    berg.mesh.rotation.y += berg.drehTempo*dt;
+    berg.mesh.rotation.y = wt*berg.drehTempo;
   }
 }
 [[20,-26,3.5],[-26,14,4.5],[8,44,3],[-14,-44,4],[48,26,5],[-52,-10,3.5],
@@ -1085,6 +1156,7 @@ function mpVerbinden(){
     try{ msg = JSON.parse(ev.data); } catch(e){ return; }
     if(msg.typ === "willkommen"){
       meineId = msg.id;
+      if(typeof msg.serverZeit === "number") zeitVersatz = msg.serverZeit - Date.now();
     } else if(msg.typ === "zustand" && msg.id !== meineId){
       mpEmpfangeZustand(msg);
     } else if(msg.typ === "weg"){
@@ -1094,12 +1166,18 @@ function mpVerbinden(){
     }
   };
 }
+function baueSchiffFuerTyp(typ, farbe){
+  if(typ === "concordia") return baueSchiffVoll(farbe || 0x999999, {rumpf:0xf4efe4, schornstein:0x1c3a5e});
+  if(typ === "uboot") return baueUBoot();
+  return baueSchiffVoll(farbe || 0x999999);
+}
 function mpHoleSpieler(id, farbe){
   let p = andereSpieler.get(id);
   if(!p){
     p = {
       farbe: farbe || 0x999999,
-      schiff: baueSchiffVoll(farbe || 0x999999),
+      fahrzeugTyp: "titanic",
+      schiff: baueSchiffFuerTyp("titanic", farbe),
       x:0, z:0, richtung:0, zielX:0, zielZ:0, zielRichtung:0,
       sinkt:false, sinkZeit:0, gebrochen:false, sinkVy:0,
       abwurfZeiten:[0,0,0,0], bruchZeit:99,
@@ -1113,6 +1191,23 @@ function mpHoleSpieler(id, farbe){
 }
 function mpEmpfangeZustand(msg){
   const p = mpHoleSpieler(msg.id, msg.farbe);
+  const neuerTyp = msg.fahrzeugTyp || "titanic";
+
+  if(neuerTyp !== p.fahrzeugTyp){
+    // Mitspieler hat das Fahrzeug gewechselt: Modell neu bauen,
+    // ein evtl. altes Wrack bleibt dabei ganz normal liegen.
+    if(p.gebrochen){
+      if(p.schiff.bug.parent) szene.remove(p.schiff.bug);
+      if(p.schiff.heck.parent) szene.remove(p.schiff.heck);
+    } else if(p.schiff.wurzel.parent){
+      szene.remove(p.schiff.wurzel);
+    }
+    p.fahrzeugTyp = neuerTyp;
+    p.schiff = baueSchiffFuerTyp(neuerTyp, p.farbe);
+    p.sinkt = false; p.gebrochen = false; p.sinkZeit = 0; p.ruheZeit = 0; p.sinkVy = 0;
+    p.bugEintrag = null; p.heckEintrag = null;
+  }
+
   p.zielX = msg.x; p.zielZ = msg.z; p.zielRichtung = msg.richtung;
   if(msg.sinkt && !p.sinkt){
     // Mitspieler beginnt zu sinken – exakt dieselbe Sequenz wie beim Spieler
@@ -1130,7 +1225,7 @@ function mpEmpfangeZustand(msg){
     }
   } else if(!msg.sinkt && p.sinkt){
     // Mitspieler hat neu gestartet: frisches Schiff bauen, das alte Wrack bleibt liegen
-    p.schiff = baueSchiffVoll(p.farbe);
+    p.schiff = baueSchiffFuerTyp(p.fahrzeugTyp, p.farbe);
     p.sinkt = false; p.gebrochen = false; p.sinkZeit = 0; p.ruheZeit = 0; p.sinkVy = 0;
     p.bugEintrag = null; p.heckEintrag = null;
   }
@@ -1140,7 +1235,7 @@ let mpLetzteSendeZeit = 0;
 function mpSendeZustand(t){
   if(!mpVerbunden || t - mpLetzteSendeZeit < .1) return;
   mpLetzteSendeZeit = t;
-  mpSocket.send(JSON.stringify({typ:"zustand", x:spiel.x, z:spiel.z, richtung:spiel.richtung, sinkt:spiel.sinkt}));
+  mpSocket.send(JSON.stringify({typ:"zustand", x:spiel.x, z:spiel.z, richtung:spiel.richtung, sinkt:spiel.sinkt, fahrzeugTyp}));
 }
 function mpSendeHupe(){
   if(mpVerbunden) mpSocket.send(JSON.stringify({typ:"hupe"}));
@@ -1283,7 +1378,7 @@ if("ontouchstart" in window || navigator.maxTouchPoints > 0){
 }
 
 /* ---------------- Gamepad-API ---------------- */
-const mapping = { lenk:null, gas:null, rueck:null, boost:null };
+const mapping = { lenk:null, gas:null, rueck:null, boost:null, tauchen:null };
 let hupenGedrueckt = false;
 function lesePads(){ return navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : []; }
 function padName(idx){
@@ -1345,6 +1440,20 @@ function boostGedrueckt(){
   }
   return false;
 }
+function aktuelleTauchrichtung(){
+  // -1 = auftauchen, +1 = abtauchen
+  if(mapping.tauchen){
+    const v = leseAchse(mapping.tauchen);
+    if(v !== null){
+      const {ruhe, voll} = mapping.tauchen;
+      const s = THREE.MathUtils.clamp((v-ruhe)/((voll-ruhe)||1), -1, 1);
+      if(Math.abs(s) > .06) return s;
+    }
+  }
+  if(tasten["f"]) return 1;
+  if(tasten["c"]) return -1;
+  return 0;
+}
 function istBelegterKnopf(padIdx, knopfIdx){
   if(mapping.rueck && mapping.rueck.typ==="knopf" && padIdx===mapping.rueck.pad && knopfIdx===mapping.rueck.knopf) return true;
   if(mapping.boost && padIdx===mapping.boost.pad && knopfIdx===mapping.boost.knopf) return true;
@@ -1364,17 +1473,36 @@ const wizard = document.getElementById("wizard");
 const karte = document.getElementById("karteInhalt");
 let wizardAktiv = true, wizardAbbruch = null;
 
+const FAHRZEUG_NAMEN = { titanic:"Titanic", concordia:"Costa Concordia", uboot:"U-Boot" };
 function zeigeStart(){
   wizardAktiv = true; wizard.classList.remove("versteckt");
-  const anzahl = lesePads().length;
   karte.innerHTML = `
     <div class="gross">🚢</div>
-    <h1>Kapitän Ahoi! – Titanic-Edition</h1>
-    <p>Bring die <b>Fahrgäste</b> zu ihrem Zielhafen – ihre <b>Farbe</b> verrät,
-    zu welcher <b>Hafenfahne</b> (A rot, B blau, C grün, D orange) sie wollen.
-    Sammle <b>Sterne</b>, weich <b>Eisbergen</b> und anderen Schiffen aus –
-    und pass auf: Nachts und bei <b>Sturm</b> wird's ungemütlich! 🌙🌩️<br>
-    <span class="klein">Boost: Taste <b>E</b> (oder eigener Knopf am Lenkrad).</span></p>
+    <h1>Kapitän Ahoi!</h1>
+    <p>Womit möchtest du fahren?</p>
+    <button class="knopf" id="wTitanic">🚢 Titanic</button>
+    <button class="knopf" id="wConcordia">🛳️ Costa Concordia</button>
+    <button class="knopf" id="wUboot">🤿 U-Boot <span class="klein">(Wracks ansehen)</span></button>
+    <p class="klein">Das U-Boot kann tauchen und die gesunkenen Wracks am Meeresgrund
+    besuchen – dafür braucht es aber keine Fahrgäste und keine Häfen.</p>`;
+  document.getElementById("wTitanic").onclick = () => { fahrzeugTyp = "titanic"; zeigeCockpitIntro(); };
+  document.getElementById("wConcordia").onclick = () => { fahrzeugTyp = "concordia"; zeigeCockpitIntro(); };
+  document.getElementById("wUboot").onclick = () => { fahrzeugTyp = "uboot"; zeigeCockpitIntro(); };
+}
+function zeigeCockpitIntro(){
+  const anzahl = lesePads().length;
+  const zusatz = fahrzeugTyp === "uboot"
+    ? `<p class="klein">Zum Tauchen brauchst du noch eine Taste/Achse für die Tiefe –
+       das fragen wir im Cockpit-Check gleich mit ab.</p>`
+    : `<p>Bring die <b>Fahrgäste</b> zu ihrem Zielhafen – ihre <b>Farbe</b> verrät,
+       zu welcher <b>Hafenfahne</b> (A rot, B blau, C grün, D orange) sie wollen.
+       Sammle <b>Sterne</b>, weich <b>Eisbergen</b> und anderen Schiffen aus –
+       und pass auf: Nachts und bei <b>Sturm</b> wird's ungemütlich! 🌙🌩️</p>`;
+  karte.innerHTML = `
+    <div class="gross">🕹️</div>
+    <h1>${FAHRZEUG_NAMEN[fahrzeugTyp]}</h1>
+    ${zusatz}
+    <p class="klein">Boost: Taste <b>E</b> (oder eigener Knopf am Lenkrad).</p>
     <p><b>${anzahl}</b> Steuergerät${anzahl===1?"":"e"} gefunden.
     ${anzahl===0?"<br><span class='klein'>Tipp: Lenkrad kurz drehen oder einen Knopf drücken, damit der Browser es erkennt.</span>":""}</p>
     <button class="knopf" id="btnCheck">🕹️ Cockpit-Check starten</button>
@@ -1516,12 +1644,48 @@ function schrittBoost(){
       if(ki >= 0){
         erledigt = true; clearInterval(timer);
         mapping.boost = {pad:p.index, knopf:ki};
-        zeigeFertig(); return;
+        naechsterSchrittNachBoost(); return;
       }
     }
   }, 50);
-  document.getElementById("btnSkipBoost").onclick = () => { erledigt = true; clearInterval(timer); mapping.boost = null; zeigeFertig(); };
+  document.getElementById("btnSkipBoost").onclick = () => { erledigt = true; clearInterval(timer); mapping.boost = null; naechsterSchrittNachBoost(); };
   wizardAbbruch = () => clearInterval(timer);
+}
+function naechsterSchrittNachBoost(){
+  if(fahrzeugTyp === "uboot") schrittTauchen();
+  else zeigeFertig();
+}
+function schrittTauchen(){
+  findeBewegteAchse("Schritt 5: Tauchgang-Achse", "Nur fürs U-Boot: beweg den Hebel/die Achse, die du zum <b>Auf- und Abtauchen</b> benutzen willst – erst in eine Richtung, dann zurück.", "🤿",
+    ({pad, achse, start}) => {
+      let extrem = start;
+      karte.innerHTML = `
+        <div class="gross">🤿</div>
+        <h2>Achse gefunden!</h2>
+        <p>Beweg sie einmal ganz zum Anschlag in <b>eine</b> Richtung.</p>
+        <div class="balken"><div id="tauchBalken"></div></div>
+        <button class="knopf" id="btnTauchFertig">✅ Passt!</button>
+        <button class="knopf leise" id="btnTauchSkip">Ohne Achse (Tasten F/C)</button>`;
+      const t = setInterval(() => {
+        const p = lesePads().find(p => p.index===pad);
+        if(!p) return;
+        const v = p.axes[achse];
+        if(Math.abs(v-start) > Math.abs(extrem-start)) extrem = v;
+        const b = document.getElementById("tauchBalken");
+        if(b) b.style.width = Math.min(100, Math.abs(v-start)/(Math.abs(extrem-start)||1)*100) + "%";
+      }, 50);
+      document.getElementById("btnTauchFertig").onclick = () => {
+        clearInterval(t);
+        mapping.tauchen = {pad, achse, ruhe:start, voll:extrem};
+        zeigeFertig();
+      };
+      document.getElementById("btnTauchSkip").onclick = () => {
+        clearInterval(t);
+        mapping.tauchen = null;
+        zeigeFertig();
+      };
+      wizardAbbruch = () => clearInterval(t);
+    });
 }
 function zeigeFertig(){
   const rueckText = mapping.rueck
@@ -1530,11 +1694,15 @@ function zeigeFertig(){
   const boostText = mapping.boost
     ? "Boost: Knopf " + mapping.boost.knopf + " am " + padName(mapping.boost.pad)
     : "Boost: Taste E";
+  const tauchText = fahrzeugTyp === "uboot"
+    ? "<br><b>" + (mapping.tauchen ? "Tauchen: eigene Achse" : "Tauchen: Taste F (runter) / C (rauf)") + "</b>"
+    : "";
   karte.innerHTML = `
     <div class="gross">🎉</div>
     <h2>Alles klar, Kapitän!</h2>
-    <p>Lenkrad und Gashebel sind startklar.<br><b>${rueckText}</b><br><b>${boostText}</b><br>
-    <span class="klein">Jeder andere Knopf hupt das Dampferhorn. 📯 Und denk dran: Eisbergen ausweichen!</span></p>
+    <p>Lenkrad und Gashebel sind startklar.<br><b>${rueckText}</b><br><b>${boostText}</b>${tauchText}<br>
+    <span class="klein">Jeder andere Knopf hupt das Dampferhorn. 📯
+    ${fahrzeugTyp === "uboot" ? "Viel Spaß beim Wracks-Erkunden am Meeresgrund!" : "Und denk dran: Eisbergen ausweichen!"}</span></p>
     <button class="knopf" id="btnLos">⚓ Leinen los!</button>`;
   document.getElementById("btnLos").onclick = () => schliesseWizard();
 }
@@ -1544,6 +1712,7 @@ function schliesseWizard(){
   wizardAktiv = false;
   aktualisiereChips();
   ton(440,.15,"triangle");
+  neustart();   // frisches Fahrzeug passend zur (evtl. neu gewählten) Auswahl bauen
 }
 function zeigeUntergang(){
   wizardAktiv = false;
@@ -1577,7 +1746,7 @@ function aktualisiereChips(){
 /* ---------------- Spiel-Zustand ---------------- */
 const KAPAZITAET = 9;
 const RAND = 240;
-const spiel = { x:0, z:0, richtung:0, tempo:0, sterne:0,
+const spiel = { x:0, z:0, richtung:0, tempo:0, sterne:0, tiefe:0,
                 gaeste: [],                    // [{ziel: hafen}]
                 boostEnergie:1, boostAktiv:false,
                 sinkt:false, sinkZeit:0, gebrochen:false, sinkVy:0,
@@ -1766,6 +1935,22 @@ function truemmerSchritt(dt, t){
     if(d.gelandet && d.typ !== "bug" && d.typ !== "heck" && d.typ !== "npcwrack") continue;
     const o = d.obj;
 
+    // Sicherheitsnetz: falls ein Teil aus irgendeinem Grund nie richtig
+    // landet (z.B. Netzwerk-Aussetzer bei Mitspielern), zwingen wir es
+    // spätestens nach 18 s sanft auf den Grund, statt es für immer an der
+    // Oberfläche hängen zu lassen.
+    if(!d.gelandet){
+      d.alter = (d.alter||0) + dt;
+      if(d.alter > 18){
+        d.gelandet = true;
+        if(d.typ === "bug") o.position.y = GRUND_TIEFE + 1.1;
+        else if(d.typ === "heck") o.position.y = GRUND_TIEFE + 2.2;
+        else if(d.typ === "npcwrack") o.position.y = GRUND_TIEFE + .6;
+        else o.position.y = GRUND_TIEFE + .5;
+        continue;
+      }
+    }
+
     if(d.typ === "schornstein"){
       const unter = o.position.y < .2;
       d.vy -= dt * (unter ? 1.2 : 7);
@@ -1886,18 +2071,62 @@ function starteUntergang(grund){
     rb.userData.zielHafen = naechsterHafen(spiel.x, spiel.z);
     rb.userData.tempo = 1.1 + Math.random()*.6;
   }
-  // Alle Fahrgäste klettern in die Rettungsboote! Die Boote rudern danach
-  // von selbst zum nächsten Hafen, wo man sie wieder abholen kann. 🛟
+  // Fahrgäste verhalten sich unterschiedlich: die einen klettern in ein
+  // Rettungsboot, andere springen über Bord und schwimmen selbst zum
+  // nächsten Hafen, wieder andere bleiben (mutig oder unglücklich) einfach
+  // an Bord und sinken mit dem Schiff unter.
   spiel.gaeste.forEach((gast, i) => {
     const fig = schiff.gaesteFiguren[i];
     if(!fig || !fig.visible) return;
-    szene.attach(fig);
-    fig.scale.setScalar(.8);
-    gerettete.push({
-      fig, boot: schiff.boote[i % schiff.boote.length],
-      offX: (Math.random()-.5)*.12, offZ: (Math.random()-.5)*.15
-    });
+    const wuerfel = Math.random();
+    if(wuerfel < .22){
+      return;   // Bleibt an Bord (Kind von bug/heck) und sinkt mit dem Wrack
+    } else if(wuerfel < .52){
+      // Springt über Bord und schwimmt eigenständig zum nächsten Hafen
+      szene.attach(fig);
+      fig.scale.setScalar(.75);
+      schwimmer.push({
+        fig,
+        x: fig.position.x, z: fig.position.z,
+        zielHafen: naechsterHafen(spiel.x, spiel.z),
+        tempo: .55 + Math.random()*.35
+      });
+      spritzer(fig.position.x, .3, fig.position.z, 6, 2);
+    } else {
+      // Klettert in ein Rettungsboot
+      szene.attach(fig);
+      fig.scale.setScalar(.8);
+      gerettete.push({
+        fig, boot: schiff.boote[i % schiff.boote.length],
+        offX: (Math.random()-.5)*.12, offZ: (Math.random()-.5)*.15
+      });
+    }
   });
+}
+
+/* Schwimmer, die über Bord gesprungen sind, paddeln selbstständig zum
+   nächsten Hafen und reihen sich dort wieder in die Warteschlange ein. */
+const schwimmer = [];
+function schwimmerSchritt(dt, t){
+  for(let i=schwimmer.length-1;i>=0;i--){
+    const s = schwimmer[i];
+    const dx = s.zielHafen.dockX - s.x, dz = s.zielHafen.dockZ - s.z;
+    const d = Math.hypot(dx, dz);
+    if(d > 2.5){
+      s.x += dx/d * s.tempo * dt;
+      s.z += dz/d * s.tempo * dt;
+      s.fig.rotation.y = Math.atan2(dx, dz);
+      s.fig.position.set(s.x, wellenHoehe(s.x, s.z, t)*.3 + .05, s.z);
+    } else {
+      if(s.zielHafen.warte.length < HAFEN_WARTE_MAX){
+        s.zielHafen.warte.push({ziel: zufaelligesZiel(s.zielHafen)});
+        aktualisiereHafenFiguren();
+      }
+      zeigeToast(`🏊 Ein geretteter Schwimmer erreicht ${s.zielHafen.name}!`);
+      szene.remove(s.fig);
+      schwimmer.splice(i, 1);
+    }
+  }
 }
 
 /* Rettungsboote mit geretteten Fahrgästen steuern selbstständig den
@@ -1940,9 +2169,9 @@ function neustart(){
       if(i >= 0) rettungsboote.splice(i, 1);
     }
   }
-  schiff = baueSchiffVoll(0x9c2b1f);
+  schiff = baueAktuellesSchiff();
 
-  spiel.x = 0; spiel.z = 0; spiel.richtung = 0; spiel.tempo = 0;
+  spiel.x = 0; spiel.z = 0; spiel.richtung = 0; spiel.tempo = 0; spiel.tiefe = 0;
   spiel.gaeste = []; spiel.boostEnergie = 1; spiel.boostAktiv = false;
   spiel.sinkt = false; spiel.sinkZeit = 0; spiel.gebrochen = false; spiel.sinkVy = 0;
   spiel.bugEintrag = null; spiel.heckEintrag = null;
@@ -2149,6 +2378,9 @@ function schrittLoop(){
   /* Rettungsboote mit geretteten Fahrgästen steuern selbstständig einen Hafen an */
   rettungsbootSchritt(dt);
 
+  /* Über Bord gesprungene Schwimmer paddeln selbst zum nächsten Hafen */
+  schwimmerSchritt(dt, t);
+
   /* Rauch aus den Kaminen altern lassen */
   rauchSchritt(dt);
 
@@ -2203,16 +2435,18 @@ function schrittLoop(){
     let nz = spiel.z + Math.cos(spiel.richtung) * -spiel.tempo * dt
            + sturm.windZ * sturm.staerke * dt * 2.4;
 
-    /* Eisberg = Untergang! */
-    for(const berg of eisberge){
-      if(Math.hypot(nx-berg.x, nz-berg.z) < berg.r + SCHIFF_RADIUS*.55){
-        spiel.x = nx; spiel.z = nz;
-        starteUntergang("eisberg");
-        break;
+    /* Eisberg = Untergang! (das U-Boot kann einfach drunter durchtauchen) */
+    if(fahrzeugTyp !== "uboot"){
+      for(const berg of eisberge){
+        if(Math.hypot(nx-berg.x, nz-berg.z) < berg.r + SCHIFF_RADIUS*.55){
+          spiel.x = nx; spiel.z = nz;
+          starteUntergang("eisberg");
+          break;
+        }
       }
     }
-    /* NPC gerammt? Dann sinken BEIDE Schiffe! */
-    if(!spiel.sinkt){
+    /* NPC gerammt? Dann sinken BEIDE Schiffe! (nicht fürs U-Boot) */
+    if(!spiel.sinkt && fahrzeugTyp !== "uboot"){
       for(const npc of [...npcSchiffe]){
         const d = Math.hypot(nx-npc.x, nz-npc.z);
         if(d < 4){
@@ -2245,8 +2479,9 @@ function schrittLoop(){
       /* Automatisches Anlegen: nur wenn man gerade NICHT aktiv Gas gibt
          (also andocken will), bremst und zieht sich das Schiff sanft zur
          Anlegestelle. Sobald man Vollgas gibt, lässt die Hilfe sofort los –
-         so kommt man immer problemlos wieder vom Hafen weg. */
-      if(Math.abs(schub) < .22){
+         so kommt man immer problemlos wieder vom Hafen weg. Das U-Boot legt
+         nicht an – es transportiert ja keine Fahrgäste. */
+      if(fahrzeugTyp !== "uboot" && Math.abs(schub) < .22){
         for(const h of haefen){
           const dd = Math.hypot(nx-h.dockX, nz-h.dockZ);
           if(dd < 13){
@@ -2264,23 +2499,32 @@ function schrittLoop(){
       spiel.x = nx; spiel.z = nz;
 
       const w = schiff.wurzel;
-      w.position.set(spiel.x, .05 + wellenHoehe(spiel.x, spiel.z, t)*.35, spiel.z);
-      w.rotation.y = spiel.richtung;
-      const vorn = wellenHoehe(spiel.x + Math.sin(spiel.richtung)*-4.5, spiel.z + Math.cos(spiel.richtung)*-4.5, t);
-      const hinten = wellenHoehe(spiel.x + Math.sin(spiel.richtung)*4.5, spiel.z + Math.cos(spiel.richtung)*4.5, t);
-      w.rotation.x = (vorn-hinten)*.05 + spiel.tempo*.002;
-      w.rotation.z = lenkung * -.07 + Math.sin(t*.9)*.015*wellenFaktor;
+      if(fahrzeugTyp === "uboot"){
+        // Tiefe per Achse/Tasten steuern – 0 = Oberfläche, mehr = tiefer
+        spiel.tiefe = THREE.MathUtils.clamp(spiel.tiefe + aktuelleTauchrichtung()*4.2*dt, 0, GRUND_TIEFE*-1 - 2.5);
+        w.position.set(spiel.x, .1 - spiel.tiefe, spiel.z);
+        w.rotation.y = spiel.richtung;
+        w.rotation.x += (aktuelleTauchrichtung()*.35 - w.rotation.x) * Math.min(1, dt*2);
+        w.rotation.z = lenkung * -.12;
+      } else {
+        w.position.set(spiel.x, .05 + wellenHoehe(spiel.x, spiel.z, t)*.35, spiel.z);
+        w.rotation.y = spiel.richtung;
+        const vorn = wellenHoehe(spiel.x + Math.sin(spiel.richtung)*-4.5, spiel.z + Math.cos(spiel.richtung)*-4.5, t);
+        const hinten = wellenHoehe(spiel.x + Math.sin(spiel.richtung)*4.5, spiel.z + Math.cos(spiel.richtung)*4.5, t);
+        w.rotation.x = (vorn-hinten)*.05 + spiel.tempo*.002;
+        w.rotation.z = lenkung * -.07 + Math.sin(t*.9)*.015*wellenFaktor;
+      }
 
       if(Math.abs(spiel.tempo) > 3 && Math.random() < (boostet ? .95 : .6)){
         spritzer(
           spiel.x + Math.sin(spiel.richtung)*5,
-          .45,
+          fahrzeugTyp === "uboot" ? w.position.y+.3 : .45,
           spiel.z + Math.cos(spiel.richtung)*5, boostet ? 2 : 1, 1.6);
       }
       emittiereRauch(schiff, Math.sin(spiel.richtung)*-spiel.tempo, Math.cos(spiel.richtung)*-spiel.tempo);
       setzeSchiffslichter(schiff, aktuelleNacht);
 
-      hafenSchritt(dt);
+      if(fahrzeugTyp !== "uboot") hafenSchritt(dt);
 
       for(const s of sterne){
         if(!s.visible) continue;
@@ -2340,8 +2584,16 @@ function schrittLoop(){
   } else {
     const kx = spiel.x + Math.sin(spiel.richtung)*16;
     const kz = spiel.z + Math.cos(spiel.richtung)*16;
-    kamera.position.lerp(new THREE.Vector3(kx, 9.5, kz), Math.min(1, dt*3));
-    kamera.lookAt(spiel.x, Math.max(1.5, schiff.wurzel.position.y+1.5), spiel.z);
+    if(fahrzeugTyp === "uboot"){
+      // Kamera folgt dem U-Boot auch in die Tiefe, statt an der
+      // Wasseroberfläche "zurückzubleiben".
+      const ky = schiff.wurzel.position.y + 3.2;
+      kamera.position.lerp(new THREE.Vector3(kx, ky, kz), Math.min(1, dt*3));
+      kamera.lookAt(spiel.x, schiff.wurzel.position.y, spiel.z);
+    } else {
+      kamera.position.lerp(new THREE.Vector3(kx, 9.5, kz), Math.min(1, dt*3));
+      kamera.lookAt(spiel.x, Math.max(1.5, schiff.wurzel.position.y+1.5), spiel.z);
+    }
   }
 
   /* Himmel, Licht und Nebel aus Tageszeit + Sturm mischen */
