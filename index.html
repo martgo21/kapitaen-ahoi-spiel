@@ -807,6 +807,219 @@ function baueConcordia(){
   szene.add(wurzel);
   return {wurzel, bug, heck, schornsteine, boote, gaesteFiguren, lichter, wanderZiel};
 }
+
+/* ---------------- Flugzeugträger ----------------
+   Sehr breites, flaches Flugdeck statt einer Kabinen-Aufbauten, ein
+   kleiner "Island"-Turm seitlich versetzt (wie beim echten Vorbild), und
+   ein paar kleine Jets, die ständig eine Warteschleife um den Träger
+   fliegen und ab und zu zur "Landung" kurz zurück aufs Deck kommen. */
+function baueFlugzeugtraeger(){
+  const wurzel = new THREE.Group();
+  const bug  = new THREE.Group();
+  const heck = new THREE.Group();
+  wurzel.add(bug, heck);
+  const halb = z => (z < 0 ? bug : heck);
+
+  const rumpfMat = new THREE.MeshPhongMaterial({color:0x4a5258, flatShading:true});
+  const deckMat = new THREE.MeshPhongMaterial({color:0x33383b, flatShading:true});
+  const streifenMat = new THREE.MeshPhongMaterial({color:0xf1c93c, flatShading:true});
+  const islandMat = new THREE.MeshPhongMaterial({color:0xdfe4e6, flatShading:true});
+
+  for(const [vz, ziel] of [[-2.75, bug],[2.75, heck]]){
+    const rumpf = new THREE.Mesh(
+      verjuenge(new THREE.BoxGeometry(2.6, 1.3, 5.5, 1, 1, 5).translate(0,0,vz)), rumpfMat);
+    rumpf.position.y = .6; ziel.add(rumpf);
+    const deck = new THREE.Mesh(
+      verjuenge(new THREE.BoxGeometry(3.2, .18, 5.5, 1, 1, 5).translate(0,0,vz)), deckMat);
+    deck.position.y = 1.4; ziel.add(deck);
+    const mittelstreifen = new THREE.Mesh(
+      verjuenge(new THREE.BoxGeometry(.35, .02, 5.3, 1, 1, 5).translate(0,0,vz)), streifenMat);
+    mittelstreifen.position.y = 1.5; ziel.add(mittelstreifen);
+  }
+
+  // Island-Turm seitlich versetzt (Steuerbord), wie beim echten Träger
+  const island = new THREE.Mesh(new THREE.BoxGeometry(.9, 1.7, 2.4), islandMat);
+  island.position.set(1.35, 2.35, .3); heck.add(island);
+  const bruecke = new THREE.Mesh(new THREE.BoxGeometry(.8, .4, 1.2), islandMat);
+  bruecke.position.set(1.35, 3.4, .1); heck.add(bruecke);
+  const radarMast = new THREE.Mesh(new THREE.CylinderGeometry(.04,.06,1.6,8), MAT.dunkel);
+  radarMast.position.set(1.35, 4.4, .3); heck.add(radarMast);
+
+  const schornsteine = [];   // kein sichtbarer Rauch, echte Träger sind nuklear/haben keine Schlote
+
+  const boote = [];
+  for(let i=0;i<3;i++){
+    const rb = new THREE.Mesh(new THREE.SphereGeometry(.13,10,7), MAT.weiss);
+    rb.scale.set(1,.7,2.2);
+    const bz = -2 + i*2;
+    rb.position.set(-1.65, 1.1, bz);
+    halb(bz).add(rb);
+    boote.push(rb);
+    rettungsboote.push(rb);
+  }
+
+  // Fahrgäste stehen an Deck entlang der Backbordseite (weg vom Island)
+  const gaesteFiguren = [];
+  const wanderZiel = [];
+  const plaetze = [];
+  for(let i=0;i<9;i++) plaetze.push([-1.15, -2.4 + i*(4.8/8)]);
+  for(let i=0;i<plaetze.length;i++){
+    const f = baueFigur(0xffffff);
+    f.position.set(plaetze[i][0], 1.5, plaetze[i][1]);
+    f.visible = false;
+    halb(plaetze[i][1]).add(f);
+    gaesteFiguren.push(f);
+    wanderZiel.push({
+      heimX: plaetze[i][0], heimZ: plaetze[i][1],
+      zielX: plaetze[i][0], zielZ: plaetze[i][1],
+      wartezeit: Math.random()*3
+    });
+  }
+
+  const lichter = baueSchiffLichter(bug, heck);
+
+  wurzel.scale.setScalar(SCHIFF_SKALA);
+  szene.add(wurzel);
+  const traeger = {wurzel, bug, heck, schornsteine, boote, gaesteFiguren, lichter, wanderZiel};
+  traeger.jets = baueJetSchwarm(traeger);
+  return traeger;
+}
+
+/* Kleine Jets, die unabhängig vom Trägerdeck eine Warteschleife fliegen.
+   Rein kosmetisch – kein Gameplay, keine Kollision. */
+function baueJet(){
+  const g = new THREE.Group();
+  const mat = new THREE.MeshPhongMaterial({color:0x8f9aa0, flatShading:true});
+  const rumpf = new THREE.Mesh(new THREE.ConeGeometry(.1,.7,7), mat);
+  rumpf.rotation.x = -Math.PI/2; g.add(rumpf);
+  const fluegel = new THREE.Mesh(new THREE.BoxGeometry(.9,.03,.3), mat);
+  fluegel.position.z = .05; g.add(fluegel);
+  const leitwerk = new THREE.Mesh(new THREE.BoxGeometry(.03,.22,.18), mat);
+  leitwerk.position.set(0,.1,.32); g.add(leitwerk);
+  g.visible = false;
+  szene.add(g);
+  return g;
+}
+function baueJetSchwarm(traeger){
+  const jets = [];
+  for(let i=0;i<3;i++){
+    jets.push({
+      obj: baueJet(),
+      phase: Math.random()*Math.PI*2,
+      radius: 9 + Math.random()*4,
+      hoehe: 4 + Math.random()*2.5,
+      tempo: .5 + Math.random()*.2,
+      versatz: Math.random()*20
+    });
+  }
+  return jets;
+}
+function jetSchwarmSchritt(traeger, dt, t){
+  if(!traeger.jets) return;
+  const basisX = traeger.wurzel.position.x, basisZ = traeger.wurzel.position.z;
+  for(const jet of traeger.jets){
+    const zyklus = (t*jet.tempo + jet.versatz) % 26;
+    if(zyklus > 20){ jet.obj.visible = false; continue; }   // gerade "gelandet"
+    jet.obj.visible = true;
+    const winkel = t*jet.tempo*1.3 + jet.phase;
+    const x = basisX + Math.sin(winkel)*jet.radius;
+    const z = basisZ + Math.cos(winkel)*jet.radius;
+    const y = jet.hoehe + Math.sin(t*.4+jet.phase)*.6;
+    jet.obj.position.set(x, y, z);
+    jet.obj.rotation.y = winkel + Math.PI/2;
+    jet.obj.rotation.z = -.3;
+  }
+}
+
+/* ---------------- Containerschiff ----------------
+   Hoch gestapelte, bunte Container über fast die ganze Decklänge,
+   Brücke am Heck wie bei echten Frachtern. An Häfen wird zusätzlich zum
+   normalen Fahrgastwechsel ein Container symbolisch umgeladen. */
+const CONTAINER_FARBEN = [0xd94b4b, 0x3f74d1, 0xe0862e, 0x2e9e5b, 0xf1c93c, 0x8e5bb5];
+function baueContainerStapel(parent, xBasis, zBasis, hoehe){
+  for(let h=0;h<hoehe;h++){
+    const farbe = CONTAINER_FARBEN[Math.floor(Math.random()*CONTAINER_FARBEN.length)];
+    const c = new THREE.Mesh(new THREE.BoxGeometry(.78,.5,1.15),
+      new THREE.MeshPhongMaterial({color:farbe, flatShading:true}));
+    c.position.set(xBasis, 1.45 + h*.52, zBasis);
+    parent.add(c);
+  }
+}
+function baueContainerschiff(){
+  const wurzel = new THREE.Group();
+  const bug  = new THREE.Group();
+  const heck = new THREE.Group();
+  wurzel.add(bug, heck);
+  const halb = z => (z < 0 ? bug : heck);
+
+  const rumpfMat = new THREE.MeshPhongMaterial({color:0x9c2b1f, flatShading:true});
+  const deckMat = new THREE.MeshPhongMaterial({color:0x2a2f36, flatShading:true});
+
+  for(const [vz, ziel] of [[-2.75, bug],[2.75, heck]]){
+    const rumpf = new THREE.Mesh(
+      verjuenge(new THREE.BoxGeometry(2.5, 1.3, 5.5, 1, 1, 5).translate(0,0,vz)), rumpfMat);
+    rumpf.position.y = .6; ziel.add(rumpf);
+    const deck = new THREE.Mesh(
+      verjuenge(new THREE.BoxGeometry(2.4, .12, 5.3, 1, 1, 5).translate(0,0,vz*0.95)), deckMat);
+    deck.position.y = 1.26; ziel.add(deck);
+  }
+
+  // Containerstapel über fast die ganze Länge, mehrere Reihen quer
+  for(const [ziel, zStart, zEnd] of [[bug,-4.0,-.5],[heck,.5,4.0]]){
+    for(let zz=zStart; zz<=zEnd; zz+=1.25){
+      for(const x of [-.9,-.15,.6]){
+        baueContainerStapel(ziel, x, zz, 2 + Math.floor(Math.random()*2));
+      }
+    }
+  }
+
+  // Brücke am Heck, wie bei echten Frachtern
+  const bruecke = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.4, 1.3), MAT.weiss);
+  bruecke.position.set(0, 2.4, 3.6); heck.add(bruecke);
+  const bruecke2 = new THREE.Mesh(new THREE.BoxGeometry(1.3, .9, 1.0), MAT.weiss);
+  bruecke2.position.set(0, 3.4, 3.6); heck.add(bruecke2);
+  const kamin = new THREE.Group();
+  const rohr = new THREE.Mesh(new THREE.CylinderGeometry(.32,.38,1.2,14), MAT.dunkel);
+  kamin.add(rohr);
+  kamin.position.set(0, 4.4, 4.0);
+  heck.add(kamin);
+  const schornsteine = [kamin];
+
+  const boote = [];
+  for(const seite of [-1,1]){
+    const rb = new THREE.Mesh(new THREE.SphereGeometry(.13,10,7), MAT.weiss);
+    rb.scale.set(1,.7,2.2);
+    rb.position.set(seite*1.3, 2.4, 4.5);
+    heck.add(rb);
+    boote.push(rb);
+    rettungsboote.push(rb);
+  }
+
+  // Fahrgäste (Besatzung) stehen zwischen den Containerreihen
+  const gaesteFiguren = [];
+  const wanderZiel = [];
+  const plaetze = [];
+  for(let i=0;i<9;i++) plaetze.push([-1.3, -2.2 + i*(4.4/8)]);
+  for(let i=0;i<plaetze.length;i++){
+    const f = baueFigur(0xffffff);
+    f.position.set(plaetze[i][0], 1.32, plaetze[i][1]);
+    f.visible = false;
+    halb(plaetze[i][1]).add(f);
+    gaesteFiguren.push(f);
+    wanderZiel.push({
+      heimX: plaetze[i][0], heimZ: plaetze[i][1],
+      zielX: plaetze[i][0], zielZ: plaetze[i][1],
+      wartezeit: Math.random()*3
+    });
+  }
+
+  const lichter = baueSchiffLichter(bug, heck);
+
+  wurzel.scale.setScalar(SCHIFF_SKALA);
+  szene.add(wurzel);
+  return {wurzel, bug, heck, schornsteine, boote, gaesteFiguren, lichter, wanderZiel};
+}
+
 const SCHIFF_SKALA = 1.18;
 const rettungsboote = [];
 let fahrzeugTyp = "titanic";   // "titanic" | "concordia" | "uboot"
@@ -973,6 +1186,8 @@ function baueAktuellesSchiff(){
   if(fahrzeugTyp === "concordia") return baueConcordia();
   if(fahrzeugTyp === "uboot") return baueUBoot();
   if(fahrzeugTyp === "wasserflugzeug") return baueWasserflugzeug();
+  if(fahrzeugTyp === "flugzeugtraeger") return baueFlugzeugtraeger();
+  if(fahrzeugTyp === "containerschiff") return baueContainerschiff();
   return baueSchiffVoll(0x9c2b1f);
 }
 let schiff = baueAktuellesSchiff();
@@ -1604,6 +1819,8 @@ function baueSchiffFuerTyp(typ, farbe){
   if(typ === "concordia") return baueConcordia();
   if(typ === "uboot") return baueUBoot();
   if(typ === "wasserflugzeug") return baueWasserflugzeug();
+  if(typ === "flugzeugtraeger") return baueFlugzeugtraeger();
+  if(typ === "containerschiff") return baueContainerschiff();
   return baueSchiffVoll(farbe || 0x999999);
 }
 function mpHoleSpieler(id, farbe){
@@ -1715,6 +1932,7 @@ function mpSchritt(dt, t){
       emittiereRauch(p.schiff, rvx, rvz);
       setzeSchiffslichter(p.schiff, aktuelleNacht);
       if(p.schiff.propeller) p.schiff.propeller.rotation.z += dt*18;
+      jetSchwarmSchritt(p.schiff, dt, t);
     }
 
     // Wer schon 12 s nichts mehr gesendet hat, ist wohl weg (z.B. Tab geschlossen ohne "close")
@@ -1923,7 +2141,7 @@ const wizard = document.getElementById("wizard");
 const karte = document.getElementById("karteInhalt");
 let wizardAktiv = true, wizardAbbruch = null;
 
-const FAHRZEUG_NAMEN = { titanic:"Titanic", concordia:"Costa Concordia", uboot:"U-Boot", wasserflugzeug:"Wasserflugzeug" };
+const FAHRZEUG_NAMEN = { titanic:"Titanic", concordia:"Costa Concordia", uboot:"U-Boot", wasserflugzeug:"Wasserflugzeug", flugzeugtraeger:"Flugzeugträger", containerschiff:"Containerschiff" };
 function zeigeStart(){
   wizardAktiv = true; wizard.classList.remove("versteckt");
   karte.innerHTML = `
@@ -1934,13 +2152,19 @@ function zeigeStart(){
     <button class="knopf" id="wConcordia">🛳️ Costa Concordia</button>
     <button class="knopf" id="wUboot">🤿 U-Boot <span class="klein">(Wracks ansehen)</span></button>
     <button class="knopf" id="wFlugzeug">🛩️ Wasserflugzeug</button>
-    <p class="klein">Alle vier können Fahrgäste mitnehmen und an Häfen anlegen. Das U-Boot
+    <button class="knopf" id="wTraeger">✈️ Flugzeugträger</button>
+    <button class="knopf" id="wContainer">📦 Containerschiff</button>
+    <p class="klein">Alle können Fahrgäste mitnehmen und an Häfen anlegen. Das U-Boot
     kann zusätzlich tauchen und gesunkene Wracks am Meeresgrund besuchen. Das
-    Wasserflugzeug kann bei genug Fahrt abheben und über Gefahren hinwegfliegen.</p>`;
+    Wasserflugzeug kann bei genug Fahrt abheben und über Gefahren hinwegfliegen.
+    Der Flugzeugträger hat eigene Jets in der Luft, das Containerschiff verlädt
+    an Häfen sichtbar Container.</p>`;
   document.getElementById("wTitanic").onclick = () => { fahrzeugTyp = "titanic"; zeigeCockpitIntro(); };
   document.getElementById("wConcordia").onclick = () => { fahrzeugTyp = "concordia"; zeigeCockpitIntro(); };
   document.getElementById("wUboot").onclick = () => { fahrzeugTyp = "uboot"; zeigeCockpitIntro(); };
   document.getElementById("wFlugzeug").onclick = () => { fahrzeugTyp = "wasserflugzeug"; zeigeCockpitIntro(); };
+  document.getElementById("wTraeger").onclick = () => { fahrzeugTyp = "flugzeugtraeger"; zeigeCockpitIntro(); };
+  document.getElementById("wContainer").onclick = () => { fahrzeugTyp = "containerschiff"; zeigeCockpitIntro(); };
 }
 function zeigeCockpitIntro(){
   const anzahl = lesePads().length;
@@ -1954,6 +2178,14 @@ function zeigeCockpitIntro(){
     zusatz = `<p>Bring die <b>Fahrgäste</b> zu ihrem Zielhafen – wie mit dem Schiff, nur
        schneller: bei genug Fahrt kannst du <b>abheben</b> und über Eisberge und
        Schiffe hinwegfliegen! Dafür brauchst du noch eine Taste/Achse für die Höhe.</p>`;
+  } else if(fahrzeugTyp === "flugzeugtraeger"){
+    zusatz = `<p>Bring die <b>Fahrgäste</b> zu ihrem Zielhafen – über dir kreisen
+       ständig ein paar eigene Jets in einer Warteschleife. Sammle <b>Sterne</b>,
+       weich <b>Eisbergen</b> und anderen Schiffen aus!</p>`;
+  } else if(fahrzeugTyp === "containerschiff"){
+    zusatz = `<p>Bring die <b>Fahrgäste</b> zu ihrem Zielhafen – an Deck stapeln sich
+       bunte Container, und bei jedem Hafenstopp wird sichtbar einer umgeladen.
+       Sammle <b>Sterne</b>, weich <b>Eisbergen</b> und anderen Schiffen aus!</p>`;
   } else {
     zusatz = `<p>Bring die <b>Fahrgäste</b> zu ihrem Zielhafen – ihre <b>Farbe</b> verrät,
        zu welcher <b>Hafenfahne</b> (A rot, B blau, C grün, D orange) sie wollen.
@@ -2234,11 +2466,15 @@ function zeigeFahrzeugSchnellwahl(){
     <button class="knopf" id="wsTitanic">🚢 Titanic</button>
     <button class="knopf" id="wsConcordia">🛳️ Costa Concordia</button>
     <button class="knopf" id="wsUboot">🤿 U-Boot <span class="klein">(Wracks ansehen)</span></button>
-    <button class="knopf" id="wsFlugzeug">🛩️ Wasserflugzeug</button>`;
+    <button class="knopf" id="wsFlugzeug">🛩️ Wasserflugzeug</button>
+    <button class="knopf" id="wsTraeger">✈️ Flugzeugträger</button>
+    <button class="knopf" id="wsContainer">📦 Containerschiff</button>`;
   document.getElementById("wsTitanic").onclick = () => { fahrzeugTyp = "titanic"; schliesseWizard(); };
   document.getElementById("wsConcordia").onclick = () => { fahrzeugTyp = "concordia"; schliesseWizard(); };
   document.getElementById("wsUboot").onclick = () => { fahrzeugTyp = "uboot"; schliesseWizard(); };
   document.getElementById("wsFlugzeug").onclick = () => { fahrzeugTyp = "wasserflugzeug"; schliesseWizard(); };
+  document.getElementById("wsTraeger").onclick = () => { fahrzeugTyp = "flugzeugtraeger"; schliesseWizard(); };
+  document.getElementById("wsContainer").onclick = () => { fahrzeugTyp = "containerschiff"; schliesseWizard(); };
 }
 document.getElementById("resetBtn").onclick = () => neustart();
 addEventListener("gamepadconnected", () => { aktualisiereChips(); if(wizardAktiv) zeigeStart(); });
@@ -2496,8 +2732,10 @@ function truemmerSchritt(dt, t){
         o.rotation.x += (-.35 - o.rotation.x) * Math.min(1, dt*1.2);
         o.rotation.z += (d.zielRotZ - o.rotation.z) * Math.min(1, dt*1);
         // Der Bug traf beim echten Untergang mit voller Wucht auf den
-        // Grund und wurde dabei sichtbar zusammengestaucht.
-        o.scale.y += (.5 - o.scale.y) * Math.min(1, dt*.9);
+        // Grund und wurde dabei richtig platt gequetscht.
+        o.scale.y += (.16 - o.scale.y) * Math.min(1, dt*.9);
+        o.scale.x += (1.35 - o.scale.x) * Math.min(1, dt*.9);
+        o.scale.z += (1.15 - o.scale.z) * Math.min(1, dt*.9);
       }
     }
 
@@ -2527,8 +2765,9 @@ function truemmerSchritt(dt, t){
         o.rotation.z += (d.zielRotZ - o.rotation.z) * Math.min(1, dt*.8);
         o.position.y += ((GRUND_TIEFE + 1.1) - o.position.y) * Math.min(1, dt*.9);
         // Das Heck wurde beim echten Untergang eher verdreht/aufgerissen
-        // als platt gedrückt – trotzdem etwas gestaucht beim Aufprall.
-        o.scale.y += (.65 - o.scale.y) * Math.min(1, dt*.7);
+        // als der Bug, ist aber auch spürbar platt gequetscht.
+        o.scale.y += (.28 - o.scale.y) * Math.min(1, dt*.7);
+        o.scale.x += (1.2 - o.scale.x) * Math.min(1, dt*.7);
       }
     }
 
@@ -2799,7 +3038,37 @@ function starteVerladung(h){
   const seil = new THREE.Line(seilGeo, new THREE.LineBasicMaterial({color:0xf4efe4}));
   szene.add(seil);
 
+  // Beim Containerschiff wird zusätzlich sichtbar ein Container umgeladen
+  if(fahrzeugTyp === "containerschiff" && gesamt > 0){
+    const farbe = CONTAINER_FARBEN[Math.floor(Math.random()*CONTAINER_FARBEN.length)];
+    const kiste = new THREE.Mesh(new THREE.BoxGeometry(.7,.45,1.0),
+      new THREE.MeshPhongMaterial({color:farbe, flatShading:true}));
+    szene.add(kiste);
+    const ausladen = raus.length > 0;
+    containerAnimationen.push({
+      obj: kiste, stegX, stegZ, start: uhr.elapsedTime, dauer: dauerGesamt, ausladen
+    });
+  }
+
   verladeAnimationen.push({ seil, figuren, stegX, stegZ, start: uhr.elapsedTime, dauer: dauerGesamt });
+}
+const containerAnimationen = [];
+function containerSchritt(t){
+  for(let ai = containerAnimationen.length-1; ai>=0; ai--){
+    const anim = containerAnimationen[ai];
+    const p = Math.min(1, (t-anim.start)/anim.dauer);
+    const vonX = anim.ausladen ? spiel.x : anim.stegX, vonZ = anim.ausladen ? spiel.z : anim.stegZ;
+    const zuX  = anim.ausladen ? anim.stegX : spiel.x, zuZ  = anim.ausladen ? anim.stegZ : spiel.z;
+    anim.obj.position.set(
+      THREE.MathUtils.lerp(vonX, zuX, p),
+      2.4 + Math.sin(p*Math.PI)*1.6,   // schwingt wie an einem Kran hoch und wieder runter
+      THREE.MathUtils.lerp(vonZ, zuZ, p));
+    anim.obj.rotation.y += .8*(1/60);
+    if(p >= 1){
+      szene.remove(anim.obj);
+      containerAnimationen.splice(ai, 1);
+    }
+  }
 }
 function verladeSchritt(t){
   for(let ai = verladeAnimationen.length-1; ai>=0; ai--){
@@ -2944,6 +3213,7 @@ function schrittLoop(){
 
   /* Verladeanimationen (Seil + laufende Fahrgäste) unabhängig weiterlaufen lassen */
   verladeSchritt(t);
+  containerSchritt(t);
 
   if(spiel.sinkt){
     spiel.sinkZeit += dt;
@@ -3097,6 +3367,7 @@ function schrittLoop(){
           spiel.z + Math.cos(spiel.richtung)*5, boostet ? 2 : 1, 1.6);
       }
       emittiereRauch(schiff, Math.sin(spiel.richtung)*-spiel.tempo, Math.cos(spiel.richtung)*-spiel.tempo);
+      jetSchwarmSchritt(schiff, dt, t);
       setzeSchiffslichter(schiff, aktuelleNacht);
 
       hafenSchritt(dt);
