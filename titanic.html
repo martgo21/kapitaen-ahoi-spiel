@@ -35,7 +35,8 @@
   .eckKnopf:active{transform:translateY(3px);box-shadow:0 1px 0 var(--tinte)}
   .eckKnopf:focus-visible{outline:3px dashed var(--tinte);outline-offset:3px}
   #setupBtn{right:14px}
-  #resetBtn{right:230px;background:#fff}
+  #fahrzeugBtn{right:230px;background:#fff}
+  #resetBtn{right:410px;background:#fff}
 
   #hinweis{position:fixed;bottom:14px;left:14px;z-index:5;max-width:310px;
     background:var(--papier);border:2px solid var(--tinte);border-radius:12px;
@@ -67,6 +68,21 @@
   .knopf:focus-visible{outline:3px dashed var(--tinte);outline-offset:3px}
   .klein{font-size:12px;opacity:.65}
   @media (prefers-reduced-motion: reduce){ .balken>div{transition:none} }
+
+  /* Touch-Steuerung fürs Handy */
+  #mobileSteuerung{position:fixed;inset:0;z-index:4;display:none;pointer-events:none;
+    justify-content:space-between;align-items:flex-end;padding:0 10px 18px}
+  #mobileSteuerung.aktiv{display:flex}
+  .mGruppe{pointer-events:auto;display:flex;gap:10px;align-items:flex-end}
+  .mKnopf{width:64px;height:64px;border-radius:50%;border:3px solid var(--tinte);
+    background:rgba(253,246,227,.82);color:var(--tinte);font-size:26px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 4px 0 rgba(20,48,60,.5);touch-action:none;user-select:none;
+    -webkit-user-select:none}
+  .mKnopf:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(20,48,60,.5)}
+  #mBoost{background:rgba(255,210,63,.88);font-size:22px}
+  #mHupe{width:52px;height:52px;font-size:20px;align-self:flex-start}
+  .mSpalte{display:flex;flex-direction:column;gap:8px;align-items:center}
 </style>
 </head>
 <body>
@@ -84,11 +100,28 @@
   <div class="chip aus" id="chipMp">Multiplayer: getrennt</div>
 </div>
 
-<div id="hinweis">⌨️ <b>Pfeiltasten</b>/<b>WASD</b>, <b>E</b> = Boost, <b>Leertaste</b> hupt, <b>R</b> = Neustart.<br>
-🧊 Eisberge und Rammen versenken das Schiff! ⚓ Bring die Fahrgäste zu ihrem Zielhafen –
+<div id="hinweis">⌨️ <b>Pfeiltasten</b>/<b>WASD</b>, <b>E</b> = Boost, <b>G</b> = Anker, <b>Leertaste</b> hupt, <b>R</b> = Neustart. 📱 Auf dem Handy erscheinen Touch-Tasten automatisch.<br>
+🧊 Eisberge und Rammen versenken das Schiff! ⚓ Die <b>Schilder</b> zeigen die Häfen, ein <b>Pfeil</b> überm Schiff das nächste Ziel –
 die <b>Farbe</b> der Figuren zeigt, zu welcher <b>Hafenfahne</b> sie wollen.</div>
 <div id="toast"></div>
+
+<div id="mobileSteuerung">
+  <div class="mGruppe">
+    <button class="mKnopf" id="mLinks" aria-label="Links">◀</button>
+    <button class="mKnopf" id="mRechts" aria-label="Rechts">▶</button>
+  </div>
+  <div class="mGruppe">
+    <button class="mKnopf" id="mHupe" aria-label="Hupe">📯</button>
+    <button class="mKnopf" id="mAnker" aria-label="Anker">⚓</button>
+    <div class="mSpalte">
+      <button class="mKnopf" id="mVor" aria-label="Vorwärts">▲</button>
+      <button class="mKnopf" id="mBoost" aria-label="Boost">⚡</button>
+      <button class="mKnopf" id="mZurueck" aria-label="Rückwärts">▼</button>
+    </div>
+  </div>
+</div>
 <button class="eckKnopf" id="resetBtn">🔁 Neustart</button>
+<button class="eckKnopf" id="fahrzeugBtn">🚢 Fahrzeug wechseln</button>
 <button class="eckKnopf" id="setupBtn">🕹️ Steuerung einrichten</button>
 
 <div id="wizard">
@@ -132,6 +165,14 @@ szene.add(sonne);
 const hemi = new THREE.HemisphereLight(0xdcf1fa, 0x155a80, .8);
 szene.add(hemi);
 
+/* ---------------- Weltzeit (für Sync über alle Spieler hinweg) ----------------
+   Tag/Nacht und Sturm richten sich nach der echten Uhrzeit (nicht nach der
+   Zeit seit dem Laden der Seite) – dadurch erleben alle Mitspieler dieselbe
+   Tageszeit und denselben Sturm zur selben Zeit, unabhängig davon, wann sie
+   die Seite geöffnet haben. */
+let zeitVersatz = 0;   // Differenz zur Serverzeit, siehe mpVerbinden()
+function weltzeit(){ return (Date.now() + zeitVersatz) / 1000; }
+
 /* ---------------- Tag & Nacht ----------------
    Ein voller Zyklus dauert 150 s: 100 s Tag, 50 s Nacht –
    die Nacht ist also genau halb so lang wie der Tag. */
@@ -160,7 +201,7 @@ const nachtHimmel = new THREE.Group();
   g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   nachtHimmel.add(new THREE.Points(g,
     new THREE.PointsMaterial({color:0xffffff, size:1.8, transparent:true, opacity:0, fog:false})));
-  const mond = new THREE.Mesh(new THREE.SphereGeometry(7, 12, 10),
+  const mond = new THREE.Mesh(new THREE.SphereGeometry(7, 18, 14),
     new THREE.MeshBasicMaterial({color:0xf5f2df, transparent:true, opacity:0, fog:false}));
   mond.position.set(120, 130, -150);
   nachtHimmel.add(mond);
@@ -169,38 +210,50 @@ szene.add(nachtHimmel);
 
 /* ---------------- Sturm-System ----------------
    Alle paar Minuten zieht ein Sturm auf – mal Regen, mal Schnee.
-   Der Himmel wird dunkel, die Wellen wachsen, der Wind schiebt das Schiff. */
-const sturm = {
-  aktiv: false, staerke: 0, typ: "regen",
-  dauer: 0, pause: 45 + Math.random()*45,
-  windX: 0, windZ: 0, blitzZeit: 0
-};
+   Der Himmel wird dunkel, die Wellen wachsen, der Wind schiebt das Schiff.
+   Der Zeitplan wird deterministisch aus der echten Uhrzeit berechnet
+   (ein simpler Zahlen-Hash statt Math.random) – so sehen alle Mitspieler
+   exakt denselben Sturm zur selben Zeit, ganz ohne Server-Absprache. */
+const sturm = { aktiv: false, staerke: 0, typ: "regen", windX: 0, windZ: 0, blitzZeit: 0 };
 let wellenFaktor = 1;
+function ganzzahlHash(seed){
+  // Reiner Integer-Hash (nur Bit-Operationen/Multiplikation) – anders als
+  // Math.sin() bei riesigen Eingabewerten liefert das auf JEDEM Gerät und
+  // in JEDEM Browser exakt dasselbe Ergebnis. Das war der eigentliche Grund,
+  // warum der Sturm bisher nicht synchron war.
+  let x = (seed ^ 0x9E3779B9) >>> 0;
+  x = Math.imul(x ^ (x >>> 16), 0x45D9F3B) >>> 0;
+  x = Math.imul(x ^ (x >>> 16), 0x45D9F3B) >>> 0;
+  x = (x ^ (x >>> 16)) >>> 0;
+  return x / 4294967296; // -> Zahl zwischen 0 und 1
+}
+function sturmZeitplan(sek){
+  const ZYKLUS_STURM = 130, STURM_DAUER = 32;
+  const idx = Math.floor(sek / ZYKLUS_STURM);
+  const phase = sek - idx*ZYKLUS_STURM;
+  const zufall = ganzzahlHash(idx % 2147483647);   // deterministischer "Zufall"
+  const kommtSturm = zufall < .55;         // nicht in jedem Zyklus zieht wirklich einer auf
+  const aktiv = kommtSturm && phase < STURM_DAUER;
+  const typ = zufall < .22 ? "schnee" : "regen";
+  const windWinkel = (zufall * 37.7) % (Math.PI*2);
+  return {aktiv, typ, windWinkel};
+}
 function sturmSchritt(dt){
-  if(!sturm.aktiv){
-    sturm.pause -= dt;
-    if(sturm.pause <= 0){
-      sturm.aktiv = true;
-      sturm.dauer = 25 + Math.random()*15;
-      sturm.typ = Math.random() < .4 ? "schnee" : "regen";
-      const w = Math.random()*Math.PI*2;
-      sturm.windX = Math.sin(w); sturm.windZ = Math.cos(w);
-      zeigeToast(sturm.typ === "schnee" ? "🌨️ Ein Schneesturm zieht auf!" : "🌩️ Ein Sturm zieht auf!");
-    }
-    sturm.staerke = Math.max(0, sturm.staerke - dt/5);
-  } else {
-    sturm.dauer -= dt;
-    sturm.staerke = Math.min(1, sturm.staerke + dt/5);
-    if(sturm.dauer <= 0){
-      sturm.aktiv = false;
-      sturm.pause = 60 + Math.random()*80;
-      zeigeToast("🌤️ Der Sturm zieht ab.");
-    }
-    // Donner & Blitz nur bei Regenstürmen
-    if(sturm.typ === "regen" && sturm.staerke > .7 && Math.random() < dt*.1){
-      sturm.blitzZeit = .16;
-      setTimeout(() => ton(55, 1.6, "sawtooth", .3), 500 + Math.random()*400);
-    }
+  const plan = sturmZeitplan(weltzeit());
+  if(plan.aktiv && !sturm.aktiv)
+    zeigeToast(plan.typ === "schnee" ? "🌨️ Ein Schneesturm zieht auf!" : "🌩️ Ein Sturm zieht auf!");
+  if(!plan.aktiv && sturm.aktiv)
+    zeigeToast("🌤️ Der Sturm zieht ab.");
+  sturm.aktiv = plan.aktiv;
+  sturm.typ = plan.typ;
+  sturm.windX = Math.sin(plan.windWinkel);
+  sturm.windZ = Math.cos(plan.windWinkel);
+  if(sturm.aktiv) sturm.staerke = Math.min(1, sturm.staerke + dt/5);
+  else sturm.staerke = Math.max(0, sturm.staerke - dt/5);
+  // Blitz/Donner bleiben ein rein lokaler kosmetischer Effekt (muss nicht synchron sein)
+  if(sturm.typ === "regen" && sturm.staerke > .7 && Math.random() < dt*.1){
+    sturm.blitzZeit = .16;
+    setTimeout(() => ton(55, 1.6, "sawtooth", .3), 500 + Math.random()*400);
   }
   sturm.blitzZeit = Math.max(0, sturm.blitzZeit - dt);
   wellenFaktor = 1 + sturm.staerke * .9;
@@ -283,11 +336,164 @@ grund.position.y = GRUND_TIEFE;
 }
 szene.add(grund);
 for(let i=0;i<44;i++){
-  const fels = new THREE.Mesh(new THREE.DodecahedronGeometry(.8+Math.random()*2.2, 0),
+  const fels = new THREE.Mesh(new THREE.DodecahedronGeometry(.8+Math.random()*2.2, 1),
     new THREE.MeshPhongMaterial({color:0x4a4238, flatShading:true}));
   fels.position.set((Math.random()-.5)*480, GRUND_TIEFE+.6, (Math.random()-.5)*480);
   fels.rotation.set(Math.random()*3, Math.random()*3, 0);
   szene.add(fels);
+}
+
+/* ---------------- Fische ----------------
+   Ganz viele kleine Fische, in lockeren Schwärmen unterwegs. Jeder
+   Schwarm hat ein Zentrum, das gemütlich umherwandert, die einzelnen
+   Fische pendeln locker darum herum und wedeln mit der Schwanzflosse. */
+const FISCH_FARBEN = [0xe8823c, 0x4fa3d1, 0xd1c34f, 0xe85a5a, 0x6fd18a, 0xc77fd1];
+function baueFisch(farbe){
+  const g = new THREE.Group();
+  const mat = new THREE.MeshPhongMaterial({color:farbe, flatShading:true});
+  const koerper = new THREE.Mesh(new THREE.ConeGeometry(.16, .5, 6), mat);
+  koerper.rotation.x = -Math.PI/2;
+  g.add(koerper);
+  const schwanz = new THREE.Mesh(new THREE.ConeGeometry(.13, .22, 4), mat);
+  schwanz.rotation.x = Math.PI/2;
+  schwanz.position.z = .32;
+  g.add(schwanz);
+  g.userData.schwanz = schwanz;
+  return g;
+}
+const fischSchwaerme = [];
+function baueFischSchwarm(x, z, tiefe, anzahl){
+  const schwarm = {
+    x, z, y: -Math.abs(tiefe), richtung: Math.random()*Math.PI*2,
+    tempo: .6 + Math.random()*.4, fische: []
+  };
+  const farbe = FISCH_FARBEN[Math.floor(Math.random()*FISCH_FARBEN.length)];
+  for(let i=0;i<anzahl;i++){
+    const f = baueFisch(farbe);
+    f.userData.versatzX = (Math.random()-.5)*4;
+    f.userData.versatzZ = (Math.random()-.5)*4;
+    f.userData.versatzY = (Math.random()-.5)*1.4;
+    f.userData.phase = Math.random()*Math.PI*2;
+    f.userData.tempo = .8 + Math.random()*.6;
+    szene.add(f);
+    schwarm.fische.push(f);
+  }
+  fischSchwaerme.push(schwarm);
+}
+// Schwärme über die ganze Karte verteilt – viele, und meist in eher
+// flacher Tiefe, damit man beim Tauchen schnell auf welche trifft.
+for(let i=0;i<55;i++){
+  baueFischSchwarm((Math.random()-.5)*440, (Math.random()-.5)*440, 1.5+Math.random()*9, 8+Math.floor(Math.random()*8));
+}
+function fischSchritt(dt, t){
+  for(const schwarm of fischSchwaerme){
+    schwarm.richtung += (Math.random()-.5)*dt*.6;
+    schwarm.x += Math.sin(schwarm.richtung)*schwarm.tempo*dt;
+    schwarm.z += Math.cos(schwarm.richtung)*schwarm.tempo*dt;
+    if(Math.abs(schwarm.x) > RAND) schwarm.richtung += Math.PI*.5;
+    if(Math.abs(schwarm.z) > RAND) schwarm.richtung += Math.PI*.5;
+    for(const f of schwarm.fische){
+      const zx = schwarm.x + f.userData.versatzX + Math.sin(t*.5 + f.userData.phase)*1.1;
+      const zz = schwarm.z + f.userData.versatzZ + Math.cos(t*.4 + f.userData.phase)*1.1;
+      const zy = schwarm.y + f.userData.versatzY + Math.sin(t*.6 + f.userData.phase)*.5;
+      const dx = zx - f.position.x, dz = zz - f.position.z;
+      if(Math.hypot(dx, dz) > .05) f.rotation.y = Math.atan2(dx, dz);
+      f.position.x += (zx - f.position.x) * Math.min(1, dt*1.6);
+      f.position.y += (zy - f.position.y) * Math.min(1, dt*1.6);
+      f.position.z += (zz - f.position.z) * Math.min(1, dt*1.6);
+      f.userData.schwanz.rotation.y = Math.sin(t*f.userData.tempo*6) * .6;
+    }
+  }
+}
+
+/* ---------------- Korallen & Seegras am Meeresgrund ---------------- */
+const KORALLEN_FARBEN = [0xe8637c, 0xf2a33c, 0x7ed6d1, 0xc77fd1, 0xe8823c, 0xf25c8c];
+function baueKoralle(x, z){
+  const g = new THREE.Group();
+  const farbe = KORALLEN_FARBEN[Math.floor(Math.random()*KORALLEN_FARBEN.length)];
+  const mat = new THREE.MeshPhongMaterial({color:farbe, flatShading:true});
+  const aeste = 3 + Math.floor(Math.random()*4);
+  for(let i=0;i<aeste;i++){
+    const h = .5 + Math.random()*1.1;
+    const ast = new THREE.Mesh(new THREE.ConeGeometry(.14+Math.random()*.14, h, 7), mat);
+    ast.position.set((Math.random()-.5)*.8, h*.5, (Math.random()-.5)*.8);
+    ast.rotation.set((Math.random()-.5)*.6, 0, (Math.random()-.5)*.6);
+    g.add(ast);
+  }
+  g.position.set(x, GRUND_TIEFE+.05, z);
+  g.rotation.y = Math.random()*Math.PI*2;
+  szene.add(g);
+}
+const seegrasListe = [];
+function baueSeegras(x, z){
+  const g = new THREE.Group();
+  const mat = new THREE.MeshPhongMaterial({color:0x2e9e5b, flatShading:true, side:THREE.DoubleSide});
+  const halme = 4 + Math.floor(Math.random()*5);
+  const blaetter = [];
+  for(let i=0;i<halme;i++){
+    const h = .7 + Math.random()*1.3;
+    const geo = new THREE.PlaneGeometry(.12, h);
+    geo.translate(0, h/2, 0);
+    const halm = new THREE.Mesh(geo, mat);
+    halm.position.set((Math.random()-.5)*.6, 0, (Math.random()-.5)*.6);
+    halm.rotation.y = Math.random()*Math.PI;
+    g.add(halm);
+    blaetter.push(halm);
+  }
+  g.position.set(x, GRUND_TIEFE+.02, z);
+  szene.add(g);
+  seegrasListe.push({blaetter, phase: Math.random()*10});
+}
+for(let i=0;i<70;i++) baueKoralle((Math.random()-.5)*470, (Math.random()-.5)*470);
+for(let i=0;i<90;i++) baueSeegras((Math.random()-.5)*470, (Math.random()-.5)*470);
+function seegrasSchritt(t){
+  for(const s of seegrasListe){
+    for(const halm of s.blaetter) halm.rotation.z = Math.sin(t*.8 + s.phase)*.25;
+  }
+}
+
+/* ---------------- Giftige Seeschlangen ---------------- */
+const seeschlangen = [];
+function baueSeeschlange(){
+  const g = new THREE.Group();
+  const hellMat = new THREE.MeshPhongMaterial({color:0xd6c220, flatShading:true});
+  const dunkelMat = new THREE.MeshPhongMaterial({color:0x2a2a1a, flatShading:true});
+  const segmente = [];
+  const anzahl = 8;
+  for(let i=0;i<anzahl;i++){
+    const seg = new THREE.Mesh(new THREE.SphereGeometry(.17-i*.009, 8, 6), i%2===0 ? hellMat : dunkelMat);
+    szene.add(seg);
+    segmente.push(seg);
+  }
+  const x = (Math.random()-.5)*440, z = (Math.random()-.5)*440;
+  seeschlangen.push({
+    segmente, x, z, y: GRUND_TIEFE + 1.5 + Math.random()*4,
+    richtung: Math.random()*Math.PI*2, tempo: .8+Math.random()*.6, phase: Math.random()*10
+  });
+}
+for(let i=0;i<14;i++) baueSeeschlange();
+function seeschlangenSchritt(dt, t){
+  for(const s of seeschlangen){
+    s.richtung += (Math.random()-.5)*dt*.5;
+    s.x += Math.sin(s.richtung)*s.tempo*dt;
+    s.z += Math.cos(s.richtung)*s.tempo*dt;
+    if(Math.abs(s.x) > RAND-10) s.richtung += Math.PI*.5;
+    if(Math.abs(s.z) > RAND-10) s.richtung += Math.PI*.5;
+    for(let i=0;i<s.segmente.length;i++){
+      const versatz = i*.24;
+      const seitlich = Math.sin(t*3 + s.phase - i*.9)*.4;
+      const px = s.x - Math.sin(s.richtung)*versatz + Math.cos(s.richtung)*seitlich;
+      const pz = s.z - Math.cos(s.richtung)*versatz - Math.sin(s.richtung)*seitlich;
+      s.segmente[i].position.set(px, s.y, pz);
+    }
+    // Gefährlich fürs U-Boot, wenn es zu nah rankommt
+    if(fahrzeugTyp === "uboot" && !spiel.sinkt){
+      const uwY = schiff.wurzel.position.y;
+      if(Math.hypot(spiel.x-s.x, spiel.z-s.z) < 2.3 && Math.abs(uwY - s.y) < 2.5){
+        starteUntergang("schlange");
+      }
+    }
+  }
 }
 
 function wellenHoehe(x, z, t){
@@ -314,9 +520,9 @@ const MAT = {
 function baueFigur(farbe){
   const g = new THREE.Group();
   const mat = new THREE.MeshPhongMaterial({color:farbe, flatShading:true});
-  const koerper = new THREE.Mesh(new THREE.CylinderGeometry(.09,.12,.34,6), mat);
+  const koerper = new THREE.Mesh(new THREE.CylinderGeometry(.09,.12,.34,9), mat);
   koerper.position.y = .17;
-  const kopf = new THREE.Mesh(new THREE.SphereGeometry(.11,6,5),
+  const kopf = new THREE.Mesh(new THREE.SphereGeometry(.11,9,7),
     new THREE.MeshPhongMaterial({color:0xf1c9a5, flatShading:true}));
   kopf.position.y = .43;
   g.add(koerper, kopf);
@@ -325,31 +531,95 @@ function baueFigur(farbe){
 }
 
 /* ---------------- Titanic (zweiteilig, damit sie brechen kann) ---------------- */
+function rumpfSkalierung(z){
+  // Exakt dieselbe Verjüngungs-Regel wie verjuenge() – wird auch für
+  // Bullaugen und Positionslichter gebraucht, damit die nicht neben dem
+  // sich verjüngenden Rumpf in der Luft hängen.
+  if(z < -4.4) return .1;
+  if(z < -2.6) return .6;
+  if(z >  4.4) return .55;
+  if(z >  2.6) return .85;
+  return 1;
+}
 function verjuenge(geo){
   const p = geo.attributes.position;
   for(let i=0;i<p.count;i++){
     const z = p.getZ(i);
-    if(z < -4.4) p.setX(i, p.getX(i)*.1);
-    else if(z < -2.6) p.setX(i, p.getX(i)*.6);
-    else if(z >  4.4) p.setX(i, p.getX(i)*.55);
-    else if(z >  2.6) p.setX(i, p.getX(i)*.85);
+    p.setX(i, p.getX(i) * rumpfSkalierung(z));
   }
   geo.computeVertexNormals();
   return geo;
 }
-function baueTitanic(){
+/* Von allen Nacht-abhängigen Effekten (Schiffslichter, Leuchtturm) gelesen –
+   wird einmal pro Frame im Haupt-Loop mit dem aktuellen Tageszeit-Wert
+   befüllt, damit nicht jede Funktion selbst weltzeit()/nachtWert() aufrufen muss. */
+let aktuelleNacht = 0;
+
+/* Kleine, selbstleuchtende Lichter an Bord: Positionslichter (rot/grün) am
+   Bug, ein weißes Topplicht, ein Hecklicht und eine Reihe Bullaugen-Lichter
+   entlang des Rumpfs. Nachts blenden sie sanft auf. */
+function baueSchiffLichter(bug, heck){
+  const lichter = [];
+  // xBasis ist der Abstand von der Mitte bei VOLLER Rumpfbreite – die
+  // tatsächliche Position wird an der Stelle z automatisch an die
+  // Rumpfverjüngung angepasst, damit nichts in der Luft hängt.
+  function licht(ziel, xBasis, y, z, farbe, groesse){
+    const x = xBasis * rumpfSkalierung(z);
+    const m = new THREE.Mesh(new THREE.SphereGeometry(groesse, 6, 5),
+      new THREE.MeshBasicMaterial({color:farbe, transparent:true, opacity:0, fog:false}));
+    m.position.set(x, y, z);
+    ziel.add(m);
+    lichter.push(m);
+  }
+  licht(bug, -1.3, 1.55, -4.3, 0xff3b30, .085);   // Backbord (rot)
+  licht(bug,  1.3, 1.55, -4.3, 0x3ddc4a, .085);   // Steuerbord (grün)
+  licht(bug,  0, 3.85, -4.15, 0xfff2cf, .09);      // Masttopplicht
+  licht(heck, 0, 3.3, 3.8, 0xfff2cf, .08);         // Hecklicht
+  for(const [ziel, zStart, zEnd] of [[bug, -3.8, -0.3], [heck, 0.3, 3.8]]){
+    for(let zz = zStart; zz <= zEnd; zz += 1.3){
+      for(const seite of [-1, 1]) licht(ziel, seite*1.3, .75, zz, 0xffdf9e, .05);
+    }
+  }
+  return lichter;
+}
+function setzeSchiffslichter(schiffObj, wert){
+  for(const l of schiffObj.lichter) l.material.opacity = wert;
+}
+
+/* Reihe kleiner Bullaugen im schwarzen Rumpf – rein optisches Detail,
+   immer sichtbar (anders als die Nachtlichter), macht den Rumpf lebendiger. */
+const bullaugeMat = new THREE.MeshPhongMaterial({color:0x0a1216, flatShading:true});
+function baueBullaugen(bug, heck){
+  for(const [ziel, zStart, zEnd] of [[bug, -3.9, -0.4], [heck, 0.4, 3.9]]){
+    for(let zz = zStart; zz <= zEnd; zz += .58){
+      const x = 1.28 * rumpfSkalierung(zz);
+      for(const seite of [-1, 1]){
+        const b = new THREE.Mesh(new THREE.CylinderGeometry(.065, .065, .05, 10), bullaugeMat);
+        b.rotation.z = Math.PI/2;
+        b.position.set(seite*x, .62, zz);
+        ziel.add(b);
+      }
+    }
+  }
+}
+
+function baueSchiffVoll(farbe, stil){
+  stil = Object.assign({ rumpf: 0x1b1f24, schornstein: 0xd9a05f }, stil || {});
+  const rumpfMat = new THREE.MeshPhongMaterial({color: stil.rumpf, flatShading:true});
+  const schornsteinMat = new THREE.MeshPhongMaterial({color: stil.schornstein, flatShading:true});
   const wurzel = new THREE.Group();
   const bug  = new THREE.Group();
   const heck = new THREE.Group();
   wurzel.add(bug, heck);
   const halb = z => (z < 0 ? bug : heck);
+  const bandMat = new THREE.MeshPhongMaterial({color: farbe, flatShading:true});
 
   for(const [vz, ziel] of [[-2.75, bug],[2.75, heck]]){
     const rumpf = new THREE.Mesh(
-      verjuenge(new THREE.BoxGeometry(2.4, 1.1, 5.5, 1, 1, 5).translate(0,0,vz)), MAT.schwarz);
+      verjuenge(new THREE.BoxGeometry(2.4, 1.1, 5.5, 1, 1, 5).translate(0,0,vz)), rumpfMat);
     rumpf.position.y = .55; ziel.add(rumpf);
     const band = new THREE.Mesh(
-      verjuenge(new THREE.BoxGeometry(2.45, .3, 5.5, 1, 1, 5).translate(0,0,vz)), MAT.rot);
+      verjuenge(new THREE.BoxGeometry(2.45, .3, 5.5, 1, 1, 5).translate(0,0,vz)), bandMat);
     band.position.y = .1; ziel.add(band);
     const deck = new THREE.Mesh(
       verjuenge(new THREE.BoxGeometry(2.2, .12, 5.2, 1, 1, 5).translate(0,0,vz*0.945)), MAT.holz);
@@ -367,11 +637,13 @@ function baueTitanic(){
   const bruecke = new THREE.Mesh(new THREE.BoxGeometry(1.6, .45, 1.1), MAT.weiss);
   bruecke.position.set(0, 2.5, -2.6); bug.add(bruecke);
 
+  // Die vier Schornsteine – der hinterste (Index 3) war schon beim echten
+  // Schiff nur Attrappe und raucht deshalb nicht mit.
   const schornsteine = [];
   for(let i=0;i<4;i++){
     const s = new THREE.Group();
-    const rohr = new THREE.Mesh(new THREE.CylinderGeometry(.3,.36,1.5,10), MAT.beige);
-    const kappe = new THREE.Mesh(new THREE.CylinderGeometry(.31,.31,.28,10), MAT.dunkel);
+    const rohr = new THREE.Mesh(new THREE.CylinderGeometry(.3,.36,1.5,16), schornsteinMat);
+    const kappe = new THREE.Mesh(new THREE.CylinderGeometry(.31,.31,.28,16), MAT.dunkel);
     kappe.position.y = .85;
     s.add(rohr, kappe);
     const sz = -1.9 + i*1.5;
@@ -382,14 +654,14 @@ function baueTitanic(){
   }
 
   for(const mz of [-4.2, 3.9]){
-    const mast = new THREE.Mesh(new THREE.CylinderGeometry(.04,.06,2.6,6), MAT.dunkel);
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(.04,.06,2.6,9), MAT.dunkel);
     mast.position.set(0, 2.6, mz); mast.rotation.x = -.06; halb(mz).add(mast);
   }
 
   const boote = [];
   for(let i=0;i<4;i++){
     for(const seite of [-1,1]){
-      const rb = new THREE.Mesh(new THREE.SphereGeometry(.14,6,5), MAT.weiss);
+      const rb = new THREE.Mesh(new THREE.SphereGeometry(.14,10,7), MAT.weiss);
       rb.scale.set(1,.7,2.4);
       const bz = -1.6 + i*1.2;
       rb.position.set(seite*.98, 1.95, bz);
@@ -399,23 +671,364 @@ function baueTitanic(){
     }
   }
 
-  // Sechs Plätze für Fahrgäste auf dem Oberdeck
+  // 24 Plätze für Fahrgäste auf dem Oberdeck – deutlich mehr Kapazität
   const gaesteFiguren = [];
-  const plaetze = [[-.4,-2.2],[.4,-1.6],[-.4,-.9],[.4,1.0],[-.4,1.7],[.4,2.3]];
+  const wanderZiel = [];
+  const plaetze = [];
+  const REIHEN = 8, SPALTEN = 3;
+  for(let r=0;r<REIHEN;r++){
+    for(let c=0;c<SPALTEN;c++){
+      plaetze.push([(c-1)*.42, -2.3 + r*(4.6/(REIHEN-1))]);
+    }
+  }
   for(let i=0;i<plaetze.length;i++){
     const f = baueFigur(0xffffff);
     f.position.set(plaetze[i][0], 2.28, plaetze[i][1]);
     f.visible = false;
     halb(plaetze[i][1]).add(f);
     gaesteFiguren.push(f);
+    wanderZiel.push({
+      heimX: plaetze[i][0], heimZ: plaetze[i][1],
+      zielX: plaetze[i][0], zielZ: plaetze[i][1],
+      wartezeit: Math.random()*3
+    });
   }
 
+  const lichter = baueSchiffLichter(bug, heck);
+  baueBullaugen(bug, heck);
+
+  wurzel.scale.setScalar(SCHIFF_SKALA);
   szene.add(wurzel);
-  return {wurzel, bug, heck, schornsteine, boote, gaesteFiguren};
+  return {wurzel, bug, heck, schornsteine, boote, gaesteFiguren, lichter, wanderZiel};
 }
+
+/* ---------------- Costa Concordia ----------------
+   Ein eigenständiges Modell statt einer umgefärbten Titanic: weißer Rumpf
+   mit dunkelblauem Wasserlinien-Streifen, eine hohe, fast durchgehende
+   Aufbauten-Silhouette wie bei modernen Kreuzfahrtschiffen, und nur EIN
+   großer Schornstein mit farbiger Logo-Scheibe am Heck. Nutzt trotzdem
+   dieselbe Bug/Heck-Trennung, damit sie genauso auseinanderbrechen und
+   sinken kann wie die Titanic. */
+function baueConcordia(){
+  const wurzel = new THREE.Group();
+  const bug  = new THREE.Group();
+  const heck = new THREE.Group();
+  wurzel.add(bug, heck);
+  const halb = z => (z < 0 ? bug : heck);
+
+  const rumpfMat = new THREE.MeshPhongMaterial({color:0xf4efe4, flatShading:true});
+  const streifenMat = new THREE.MeshPhongMaterial({color:0x1c3a5e, flatShading:true});
+  const aufbauMat = new THREE.MeshPhongMaterial({color:0xffffff, flatShading:true});
+  const funnelMat = new THREE.MeshPhongMaterial({color:0x16232e, flatShading:true});
+  const logoMat = new THREE.MeshPhongMaterial({color:0xf1a208, flatShading:true, side:THREE.DoubleSide});
+
+  for(const [vz, ziel] of [[-2.75, bug],[2.75, heck]]){
+    const rumpf = new THREE.Mesh(
+      verjuenge(new THREE.BoxGeometry(2.4, 1.1, 5.5, 1, 1, 5).translate(0,0,vz)), rumpfMat);
+    rumpf.position.y = .55; ziel.add(rumpf);
+    const streifen = new THREE.Mesh(
+      verjuenge(new THREE.BoxGeometry(2.45, .25, 5.5, 1, 1, 5).translate(0,0,vz)), streifenMat);
+    streifen.position.y = .05; ziel.add(streifen);
+    const deck = new THREE.Mesh(
+      verjuenge(new THREE.BoxGeometry(2.2, .12, 5.2, 1, 1, 5).translate(0,0,vz*0.945)), MAT.holz);
+    deck.position.y = 1.16; ziel.add(deck);
+  }
+
+  // Hohe, fast durchgehende Aufbauten – zwei Stufen, jede in Bug-/Heck-
+  // Hälften geteilt, damit sie beim Brechen sauber mit auseinandergehen.
+  const a1v = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.3, 5.3), aufbauMat);
+  a1v.position.set(0, 1.85, -2.55); bug.add(a1v);
+  const a1h = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.3, 5.3), aufbauMat);
+  a1h.position.set(0, 1.85, 2.55); heck.add(a1h);
+  const a2v = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.0, 4.6), aufbauMat);
+  a2v.position.set(0, 2.85, -2.35); bug.add(a2v);
+  const a2h = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.0, 4.6), aufbauMat);
+  a2h.position.set(0, 2.85, 2.35); heck.add(a2h);
+  const bruecke = new THREE.Mesh(new THREE.BoxGeometry(1.7, .5, 1.0), aufbauMat);
+  bruecke.position.set(0, 3.6, -4.3); bug.add(bruecke);
+
+  // Nur EIN großer Schornstein am Heck, mit farbiger Logo-Scheibe an den
+  // Seiten – kein Titanic-Vierergespann.
+  const kamin = new THREE.Group();
+  const rohr = new THREE.Mesh(new THREE.CylinderGeometry(.74, .88, 1.9, 18), funnelMat);
+  kamin.add(rohr);
+  const kappe = new THREE.Mesh(new THREE.CylinderGeometry(.76, .76, .16, 18), MAT.dunkel);
+  kappe.position.y = 1.0; kamin.add(kappe);
+  for(const seite of [-1,1]){
+    const scheibe = new THREE.Mesh(new THREE.CircleGeometry(.42, 18), logoMat);
+    scheibe.rotation.y = Math.PI/2;
+    scheibe.position.set(seite*.76, .1, 0);
+    kamin.add(scheibe);
+  }
+  kamin.position.set(0, 3.85, 2.5);
+  heck.add(kamin);
+  const schornsteine = [kamin];
+
+  for(const mz of [-4.2, 3.9]){
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(.04,.06,2.2,9), MAT.dunkel);
+    mast.position.set(0, 3.6, mz); halb(mz).add(mast);
+  }
+
+  const boote = [];
+  for(let i=0;i<4;i++){
+    for(const seite of [-1,1]){
+      const rb = new THREE.Mesh(new THREE.SphereGeometry(.14,10,7), MAT.weiss);
+      rb.scale.set(1,.7,2.4);
+      const bz = -1.6 + i*1.2;
+      rb.position.set(seite*1.08, 1.95, bz);
+      halb(bz).add(rb);
+      boote.push(rb);
+      rettungsboote.push(rb);
+    }
+  }
+
+  // Neun Fahrgastplätze auf dem Dach der zweiten Aufbau-Stufe
+  const gaesteFiguren = [];
+  const wanderZiel = [];
+  const plaetze = [];
+  for(let i=0;i<9;i++) plaetze.push([(i%2? .35:-.35), -2.1 + i*(4.2/8)]);
+  for(let i=0;i<plaetze.length;i++){
+    const f = baueFigur(0xffffff);
+    f.position.set(plaetze[i][0], 3.38, plaetze[i][1]);
+    f.visible = false;
+    halb(plaetze[i][1]).add(f);
+    gaesteFiguren.push(f);
+    wanderZiel.push({
+      heimX: plaetze[i][0], heimZ: plaetze[i][1],
+      zielX: plaetze[i][0], zielZ: plaetze[i][1],
+      wartezeit: Math.random()*3
+    });
+  }
+
+  const lichter = baueSchiffLichter(bug, heck);
+  baueBullaugen(bug, heck);
+
+  wurzel.scale.setScalar(SCHIFF_SKALA);
+  szene.add(wurzel);
+  return {wurzel, bug, heck, schornsteine, boote, gaesteFiguren, lichter, wanderZiel};
+}
+const SCHIFF_SKALA = 1.18;
 const rettungsboote = [];
-let schiff = baueTitanic();
-const SCHIFF_RADIUS = 3.2;
+let fahrzeugTyp = "titanic";   // "titanic" | "concordia" | "uboot"
+
+/* Kleines, robustes U-Boot zum Wracks-Anschauen. Nutzt bewusst dieselbe
+   Objektform wie die großen Schiffe (leere Arrays für Kamine/Boote/Gäste),
+   damit alle bestehenden Systeme (Rauch, Lichter, Fahrgäste, Verladen)
+   einfach nichts zu tun bekommen, statt überall Sonderfälle zu brauchen. */
+function baueUBoot(){
+  const wurzel = new THREE.Group();
+  const gelb = new THREE.MeshPhongMaterial({color:0xffd23f, flatShading:true});
+  const dunkel = new THREE.MeshPhongMaterial({color:0xc9992a, flatShading:true});
+
+  const rumpf = new THREE.Mesh(new THREE.CylinderGeometry(.85, .85, 5.5, 16), gelb);
+  rumpf.rotation.x = Math.PI/2; wurzel.add(rumpf);
+  const bugKappe = new THREE.Mesh(new THREE.SphereGeometry(.85, 14, 10), gelb);
+  bugKappe.position.z = -2.75; wurzel.add(bugKappe);
+  const heckKappe = new THREE.Mesh(new THREE.SphereGeometry(.68, 14, 10), gelb);
+  heckKappe.position.z = 2.75; wurzel.add(heckKappe);
+
+  const turm = new THREE.Mesh(new THREE.CylinderGeometry(.42, .52, 1.1, 12), dunkel);
+  turm.position.set(0, 1.15, -.6); wurzel.add(turm);
+  const luke = new THREE.Mesh(new THREE.CylinderGeometry(.3, .3, .18, 12), MAT.dunkel);
+  luke.position.set(0, 1.75, -.6); wurzel.add(luke);
+  const periskop = new THREE.Mesh(new THREE.CylinderGeometry(.05, .05, .9, 8), MAT.dunkel);
+  periskop.position.set(0, 2.1, -.6); wurzel.add(periskop);
+
+  for(const seite of [-1, 1]){
+    const flosse = new THREE.Mesh(new THREE.BoxGeometry(1.1, .08, .7), dunkel);
+    flosse.position.set(seite*.9, 0, 2.1); wurzel.add(flosse);
+  }
+  const steuerV = new THREE.Mesh(new THREE.BoxGeometry(.08, 1.3, .7), dunkel);
+  steuerV.position.set(0, 0, 3.05); wurzel.add(steuerV);
+  const steuerH = new THREE.Mesh(new THREE.BoxGeometry(1.3, .08, .7), dunkel);
+  steuerH.position.set(0, 0, 3.05); wurzel.add(steuerH);
+
+  // Bugscheinwerfer, damit man im Dunkeln bzw. unter Wasser die Wracks sieht
+  const scheinwerfer = new THREE.SpotLight(0xfff6da, 1.6, 60, Math.PI/5, .5, 1.1);
+  scheinwerfer.position.set(0, 0, -3.2);
+  const scheinwerferZiel = new THREE.Object3D();
+  scheinwerferZiel.position.set(0, -2, -25);
+  wurzel.add(scheinwerfer, scheinwerferZiel);
+  scheinwerfer.target = scheinwerferZiel;
+
+  // Fahrgäste sitzen oben auf dem Rumpf (an Deck, wie bei einem Ausflugs-U-Boot)
+  const gaesteFiguren = [];
+  const wanderZiel = [];
+  const plaetze = [];
+  for(let i=0;i<9;i++) plaetze.push([(i%2? .4:-.4), -2.2 + i*(4.4/8)]);
+  for(let i=0;i<plaetze.length;i++){
+    const f = baueFigur(0xffffff);
+    f.position.set(plaetze[i][0], .95, plaetze[i][1]);
+    f.scale.setScalar(.8);
+    f.visible = false;
+    wurzel.add(f);
+    gaesteFiguren.push(f);
+    wanderZiel.push({
+      heimX: plaetze[i][0], heimZ: plaetze[i][1],
+      zielX: plaetze[i][0], zielZ: plaetze[i][1],
+      wartezeit: Math.random()*3
+    });
+  }
+
+  wurzel.scale.setScalar(SCHIFF_SKALA*.9);
+  szene.add(wurzel);
+  return { wurzel, bug: wurzel, heck: wurzel, schornsteine: [], boote: [], gaesteFiguren, lichter: [], wanderZiel };
+}
+
+/* ---------------- Wasserflugzeug ----------------
+   Kleiner Doppeldecker-Schwimmer: Rumpf, zwei Tragflächen, zwei lange
+   Schwimmer unterm Rumpf, Leitwerk hinten, ein sich drehender Propeller
+   vorn. Kann Fahrgäste mitnehmen und an Häfen andocken wie die Schiffe –
+   nur eben auch fliegen, sobald genug Fahrt aufgenommen ist. */
+function baueWasserflugzeug(){
+  const wurzel = new THREE.Group();
+  const rumpfMat = new THREE.MeshPhongMaterial({color:0xf4efe4, flatShading:true});
+  const streifenMat = new THREE.MeshPhongMaterial({color:0x3f74d1, flatShading:true});
+  const dunkel = new THREE.MeshPhongMaterial({color:0x2a2f36, flatShading:true});
+
+  const rumpf = new THREE.Mesh(new THREE.CylinderGeometry(.55, .55, 4.6, 14), rumpfMat);
+  rumpf.rotation.x = Math.PI/2; wurzel.add(rumpf);
+  const nase = new THREE.Mesh(new THREE.SphereGeometry(.55, 12, 8), rumpfMat);
+  nase.position.z = -2.3; wurzel.add(nase);
+  const heckSpitze = new THREE.Mesh(new THREE.ConeGeometry(.4, 1.1, 12), rumpfMat);
+  heckSpitze.rotation.x = Math.PI/2; heckSpitze.position.z = 2.85; wurzel.add(heckSpitze);
+  const streifen = new THREE.Mesh(new THREE.CylinderGeometry(.57, .57, 1.2, 14), streifenMat);
+  streifen.rotation.x = Math.PI/2; streifen.position.z = .2; wurzel.add(streifen);
+
+  // Tragflächen
+  const fluegel = new THREE.Mesh(new THREE.BoxGeometry(7.6, .16, 1.15), rumpfMat);
+  fluegel.position.set(0, .55, -.4); wurzel.add(fluegel);
+  const strebe1 = new THREE.Mesh(new THREE.CylinderGeometry(.05,.05,.9,6), dunkel);
+  strebe1.position.set(0, .1, -.4); wurzel.add(strebe1);
+
+  // Leitwerk
+  const seitenleitwerk = new THREE.Mesh(new THREE.BoxGeometry(.1, 1.1, 1.0), rumpfMat);
+  seitenleitwerk.position.set(0, .85, 2.9); wurzel.add(seitenleitwerk);
+  const hoehenleitwerk = new THREE.Mesh(new THREE.BoxGeometry(2.6, .1, .8), rumpfMat);
+  hoehenleitwerk.position.set(0, .3, 2.9); wurzel.add(hoehenleitwerk);
+
+  // Zwei lange Schwimmer unterm Rumpf, mit Streben verbunden
+  const schwimmer = [];
+  for(const seite of [-1,1]){
+    const boot = new THREE.Mesh(new THREE.CylinderGeometry(.22,.22,4.0,10), dunkel);
+    boot.rotation.x = Math.PI/2; boot.position.set(seite*1.5, -1.15, -.1); wurzel.add(boot);
+    const bootNase = new THREE.Mesh(new THREE.ConeGeometry(.22,.6,10), dunkel);
+    bootNase.rotation.x = -Math.PI/2; bootNase.position.set(seite*1.5, -1.15, -2.1); wurzel.add(bootNase);
+    for(const zz of [-1.2, 1.2]){
+      const strebe = new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,1.05,6), dunkel);
+      strebe.position.set(seite*1.5, -.6, zz); wurzel.add(strebe);
+    }
+    schwimmer.push(boot);
+  }
+
+  // Propeller vorn – dreht sich mit dem Tempo
+  const propellerNabe = new THREE.Group();
+  propellerNabe.position.set(0, 0, -2.85);
+  for(let i=0;i<3;i++){
+    const blatt = new THREE.Mesh(new THREE.BoxGeometry(.12, 1.1, .04), dunkel);
+    blatt.rotation.z = i*(Math.PI*2/3);
+    propellerNabe.add(blatt);
+  }
+  wurzel.add(propellerNabe);
+
+  // Positionslichter an den Flügelspitzen + Hecklicht
+  const lichter = [];
+  function licht(x,y,z,farbe,groesse){
+    const m = new THREE.Mesh(new THREE.SphereGeometry(groesse,6,5),
+      new THREE.MeshBasicMaterial({color:farbe, transparent:true, opacity:0, fog:false}));
+    m.position.set(x,y,z); wurzel.add(m); lichter.push(m);
+  }
+  licht(-3.85, .55, -.4, 0xff3b30, .09);
+  licht( 3.85, .55, -.4, 0x3ddc4a, .09);
+  licht(0, .85, 3.3, 0xfff2cf, .08);
+
+  // Fahrgäste sitzen in einer kleinen Kabine auf dem Rumpf
+  const gaesteFiguren = [];
+  const wanderZiel = [];
+  const plaetze = [];
+  for(let i=0;i<9;i++) plaetze.push([(i%2? .28:-.28), -1.6 + i*(2.6/8)]);
+  for(let i=0;i<plaetze.length;i++){
+    const f = baueFigur(0xffffff);
+    f.position.set(plaetze[i][0], .95, plaetze[i][1]);
+    f.scale.setScalar(.75);
+    f.visible = false;
+    wurzel.add(f);
+    gaesteFiguren.push(f);
+    wanderZiel.push({
+      heimX: plaetze[i][0], heimZ: plaetze[i][1],
+      zielX: plaetze[i][0], zielZ: plaetze[i][1],
+      wartezeit: Math.random()*3
+    });
+  }
+
+  wurzel.scale.setScalar(SCHIFF_SKALA*.85);
+  szene.add(wurzel);
+  return {
+    wurzel, bug: wurzel, heck: wurzel, schornsteine: [], boote: [], gaesteFiguren, lichter, wanderZiel,
+    propeller: propellerNabe
+  };
+}
+
+function baueAktuellesSchiff(){
+  if(fahrzeugTyp === "concordia") return baueConcordia();
+  if(fahrzeugTyp === "uboot") return baueUBoot();
+  if(fahrzeugTyp === "wasserflugzeug") return baueWasserflugzeug();
+  return baueSchiffVoll(0x9c2b1f);
+}
+let schiff = baueAktuellesSchiff();
+const SCHIFF_RADIUS = 3.2 * SCHIFF_SKALA;
+
+/* ---------------- Anker ----------------
+   Ein Anker, den man werfen kann, um auf der Stelle zu bleiben – für
+   Schiffe und U-Boot. Kette + Anker sind eigenständige Weltobjekte
+   (nicht am Schiff hängend), damit die Kette immer sauber gerade bis
+   zum Meeresgrund läuft, egal wie das Schiff gerade schaukelt. */
+let ankerLinie = null, ankerMesh = null;
+function baueAnkerSystem(){
+  const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+  ankerLinie = new THREE.Line(geo, new THREE.LineBasicMaterial({color:0x9aa5ab}));
+  ankerLinie.visible = false;
+  szene.add(ankerLinie);
+
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(.16, .045, 6, 10), MAT.dunkel);
+  ring.rotation.x = Math.PI/2;
+  ring.position.y = .28; g.add(ring);
+  const schaft = new THREE.Mesh(new THREE.CylinderGeometry(.045,.045,.6,6), MAT.dunkel);
+  g.add(schaft);
+  const quersteg = new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,.42,6), MAT.dunkel);
+  quersteg.rotation.z = Math.PI/2;
+  quersteg.position.y = .18; g.add(quersteg);
+  for(const seite of [-1,1]){
+    const fluke = new THREE.Mesh(new THREE.ConeGeometry(.15,.35,4), MAT.dunkel);
+    fluke.rotation.z = seite*.85;
+    fluke.position.set(seite*.2, -.42, 0);
+    g.add(fluke);
+  }
+  g.visible = false;
+  szene.add(g);
+  ankerMesh = g;
+}
+baueAnkerSystem();
+function ankerUmschalten(){
+  if(fahrzeugTyp === "wasserflugzeug" || spiel.sinkt) return;
+  spiel.ankerUnten = !spiel.ankerUnten;
+  ton(spiel.ankerUnten ? 90 : 180, .3, "triangle", .18);
+  zeigeToast(spiel.ankerUnten ? "⚓ Anker geworfen" : "⚓ Anker gelichtet");
+}
+function ankerSchritt(){
+  const aktiv = spiel.ankerUnten && fahrzeugTyp !== "wasserflugzeug" && !spiel.sinkt;
+  ankerLinie.visible = aktiv;
+  ankerMesh.visible = aktiv;
+  if(!aktiv) return;
+  const obenY = schiff.wurzel.position.y;
+  const untenY = GRUND_TIEFE + .35;
+  const pos = ankerLinie.geometry.attributes.position;
+  pos.setXYZ(0, spiel.x, obenY, spiel.z);
+  pos.setXYZ(1, spiel.x, untenY, spiel.z);
+  pos.needsUpdate = true;
+  ankerMesh.position.set(spiel.x, untenY, spiel.z);
+}
 
 /* Gemeinsamer Partikel-Topf für Gischt, Blasen, Sandwolken */
 const gischtGeo = new THREE.BufferGeometry();
@@ -436,35 +1049,127 @@ function spritzer(x, y, z, n, streu){
   }
 }
 
+/* Rauch aus den Schornsteinen – nur die drei vorderen (Index 0-2) rauchen,
+   der hinterste war schon beim echten Schiff nur Attrappe. */
+const RAUCH_N = 260;
+const rauchPos = new Float32Array(RAUCH_N*3).fill(-9);
+const rauchLeben = new Float32Array(RAUCH_N).fill(0);
+const rauchVY = new Float32Array(RAUCH_N);
+const rauchVX = new Float32Array(RAUCH_N);
+const rauchVZ = new Float32Array(RAUCH_N);
+const rauchGeo = new THREE.BufferGeometry();
+rauchGeo.setAttribute("position", new THREE.BufferAttribute(rauchPos, 3));
+const rauchMat = new THREE.PointsMaterial({color:0x777f82, size:1.1, transparent:true, opacity:.5, depthWrite:false});
+const rauch = new THREE.Points(rauchGeo, rauchMat);
+szene.add(rauch);
+let rauchIdx = 0;
+function rauchPuff(x, y, z, vx, vz){
+  const i = rauchIdx = (rauchIdx+1) % RAUCH_N;
+  rauchPos[i*3]   = x + (Math.random()-.5)*.25;
+  rauchPos[i*3+1] = y;
+  rauchPos[i*3+2] = z + (Math.random()-.5)*.25;
+  rauchLeben[i] = 1;
+  rauchVY[i] = .55 + Math.random()*.4;
+  // Der Rauch erbt die Geschwindigkeit des Schiffs (sonst bleibt er bei
+  // hohem Tempo sofort zurück und es sieht aus, als käme gar kein Rauch),
+  // plus etwas Wind/Streuung für einen natürlichen Schweif.
+  rauchVX[i] = (vx||0)*.9 + (Math.random()-.5)*.6 + sturm.windX*sturm.staerke*1.5;
+  rauchVZ[i] = (vz||0)*.9 + (Math.random()-.5)*.6 + sturm.windZ*sturm.staerke*1.5;
+}
+function rauchSchritt(dt){
+  for(let i=0;i<RAUCH_N;i++){
+    if(rauchLeben[i] > 0){
+      rauchLeben[i] -= dt*.22;
+      rauchPos[i*3+1] += rauchVY[i]*dt;
+      rauchPos[i*3]   += rauchVX[i]*dt;
+      rauchPos[i*3+2] += rauchVZ[i]*dt;
+      if(rauchLeben[i] <= 0) rauchPos[i*3+1] = -9;
+    }
+  }
+  rauchGeo.attributes.position.needsUpdate = true;
+}
+function emittiereRauch(schiffObj, vx, vz){
+  for(let i=0;i<3;i++){                      // nur die drei vorderen Kamine
+    const s = schiffObj.schornsteine[i];
+    if(!s || s.parent === szene) continue;   // schon abgefallen -> kein Rauch mehr
+    if(Math.random() < .5){
+      const wp = new THREE.Vector3();
+      s.getWorldPosition(wp);
+      rauchPuff(wp.x, wp.y + .9, wp.z, vx, vz);
+    }
+  }
+}
+
 /* ---------------- Eisberge (jetzt bis weit hinaus verteilt) ---------------- */
 const eisberge = [];
 const eisMat = new THREE.MeshPhongMaterial({color:0xeaf6fb, flatShading:true, shininess:90, specular:0xffffff});
+function machSeedZufall(seed){
+  // Einfacher LCG-Zufallsgenerator mit festem Startwert – liefert auf
+  // jedem Gerät exakt dieselbe Zahlenfolge (anders als Math.random()).
+  let zustand = seed >>> 0;
+  return function(){
+    zustand = (Math.imul(zustand, 1664525) + 1013904223) >>> 0;
+    return zustand / 4294967296;
+  };
+}
+let eisbergIdx = 0;
 function baueEisberg(x, z, gr){
+  // Alles hier (Form UND Bewegung) hängt nur von einem festen, pro Eisberg
+  // eindeutigen Startwert ab – so sehen und bewegen sich Eisberge auf jedem
+  // angeschlossenen Gerät exakt gleich, ganz ohne Server-Absprache.
+  const zufall = machSeedZufall((eisbergIdx++ * 2654435761 + 12345) >>> 0);
   const g = new THREE.Group();
-  const spitzen = 2 + Math.floor(Math.random()*2);
+  const spitzen = 2 + Math.floor(zufall()*2);
   for(let i=0;i<spitzen;i++){
-    const h = i===0 ? gr*2.1 : gr*(0.8+Math.random()*.8);
-    const r = i===0 ? gr*.95 : gr*(.4+Math.random()*.35);
-    const geo = new THREE.ConeGeometry(r, h, 6, 2);
+    const h = i===0 ? gr*2.1 : gr*(0.8+zufall()*.8);
+    const r = i===0 ? gr*.95 : gr*(.4+zufall()*.35);
+    const geo = new THREE.ConeGeometry(r, h, 9, 3);
     const p = geo.attributes.position;
     for(let j=0;j<p.count;j++){
-      p.setX(j, p.getX(j) + (Math.random()-.5)*r*.3);
-      p.setZ(j, p.getZ(j) + (Math.random()-.5)*r*.3);
+      p.setX(j, p.getX(j) + (zufall()-.5)*r*.3);
+      p.setZ(j, p.getZ(j) + (zufall()-.5)*r*.3);
     }
     geo.computeVertexNormals();
     const m = new THREE.Mesh(geo, eisMat);
     m.position.set(
-      i===0 ? 0 : (Math.random()-.5)*gr,
+      i===0 ? 0 : (zufall()-.5)*gr,
       h*.5 - gr*.4,
-      i===0 ? 0 : (Math.random()-.5)*gr);
-    m.rotation.y = Math.random()*Math.PI;
-    m.rotation.z = (Math.random()-.5)*.12;
+      i===0 ? 0 : (zufall()-.5)*gr);
+    m.rotation.y = zufall()*Math.PI;
+    m.rotation.z = (zufall()-.5)*.12;
     g.add(m);
   }
   g.position.set(x, 0, z);
-  g.rotation.y = Math.random()*Math.PI*2;
+  g.rotation.y = zufall()*Math.PI*2;
   szene.add(g);
-  eisberge.push({x, z, r: gr*1.1});
+  eisberge.push({
+    x, z, r: gr*1.1, mesh: g,
+    heimX: x, heimZ: z,
+    radius: 6 + zufall()*10,
+    freq: .05 + zufall()*.05,
+    phase: zufall()*Math.PI*2,
+    drehTempo: (zufall()-.5)*.06
+  });
+}
+function eisbergSchritt(dt, t){
+  const wt = weltzeit();
+  for(const berg of eisberge){
+    // Position ist eine reine Funktion der Weltzeit – kein akkumulierter
+    // Drift, der zwischen Geräten auseinanderlaufen könnte.
+    const winkel = wt*berg.freq + berg.phase;
+    berg.x = berg.heimX + Math.sin(winkel)*berg.radius;
+    berg.z = berg.heimZ + Math.cos(winkel)*berg.radius;
+    berg.mesh.position.x = berg.x;
+    berg.mesh.position.z = berg.z;
+    berg.mesh.position.y = wellenHoehe(berg.x, berg.z, t)*.55;
+    // Neigung an die tatsächliche Wellenneigung unter dem Eisberg anpassen –
+    // so wirkt es, als würde er wirklich auf den Wellen reiten.
+    const hierX = wellenHoehe(berg.x+1.2, berg.z, t), dortX = wellenHoehe(berg.x-1.2, berg.z, t);
+    const hierZ = wellenHoehe(berg.x, berg.z+1.2, t), dortZ = wellenHoehe(berg.x, berg.z-1.2, t);
+    berg.mesh.rotation.z += ((dortX-hierX)*.09 - berg.mesh.rotation.z) * Math.min(1, dt*2);
+    berg.mesh.rotation.x += ((dortZ-hierZ)*.09 - berg.mesh.rotation.x) * Math.min(1, dt*2);
+    berg.mesh.rotation.y = wt*berg.drehTempo;
+  }
 }
 [[20,-26,3.5],[-26,14,4.5],[8,44,3],[-14,-44,4],[48,26,5],[-52,-10,3.5],
  [4,-64,4.5],[42,-52,3],[-44,50,4.5],[66,-4,3.5],[-64,-40,4],[30,64,3.5],
@@ -480,7 +1185,7 @@ const inseln = [];
 function baueInsel(x, z, gr){
   const g = new THREE.Group();
   const huegel = new THREE.Mesh(
-    new THREE.SphereGeometry(gr, 12, 8),
+    new THREE.SphereGeometry(gr, 18, 12),
     new THREE.MeshPhongMaterial({color:0xf2d59b, flatShading:true}));
   huegel.scale.y = .6;
   g.add(huegel);
@@ -491,16 +1196,26 @@ function baueInsel(x, z, gr){
     const abstand = Math.random()*gr*.35;
     const bodenHoehe = Math.sqrt(Math.max(0, gr*gr - abstand*abstand)) * .6;
     const bx = Math.cos(winkel)*abstand, bz = Math.sin(winkel)*abstand;
-    const stamm = new THREE.Mesh(new THREE.CylinderGeometry(.14,.2,1.4,6),
+    const stamm = new THREE.Mesh(new THREE.CylinderGeometry(.14,.2,1.4,9),
       new THREE.MeshPhongMaterial({color:0x8a5a3b, flatShading:true}));
     stamm.position.set(bx, bodenHoehe+.6, bz); g.add(stamm);
-    const krone = new THREE.Mesh(new THREE.ConeGeometry(.85,1.5,6),
+    const krone = new THREE.Mesh(new THREE.ConeGeometry(.85,1.5,9),
       new THREE.MeshPhongMaterial({color:0x2e9e5b, flatShading:true}));
     krone.position.set(bx, bodenHoehe+1.75, bz); g.add(krone);
   }
   g.position.set(x, 0, z);
   szene.add(g);
-  inseln.push({x, z, r: gr});
+  inseln.push({x, z, r: gr, mesh: g, bobPhase: Math.random()*10});
+}
+function inselSchritt(dt, t){
+  for(const insel of inseln){
+    if(!insel.mesh) continue;   // Hafen-Landzungen haben keine mesh-Referenz -> bleiben fest
+    // Inseln treiben nicht umher, gehen aber sanft vertikal mit den Wellen
+    // mit – kleiner als bei Eisbergen, sie sind ja viel schwerer im Wasser verankert.
+    const ziel = wellenHoehe(insel.x, insel.z, t + insel.bobPhase)*.18;
+    insel.mesh.position.y += (ziel - insel.mesh.position.y) * Math.min(1, dt*1.5);
+    insel.mesh.rotation.z = Math.sin(t*.3 + insel.bobPhase)*.015;
+  }
 }
 [[34,10,4],[-36,-24,5],[14,-38,3.5],[-20,36,4.5],[58,-30,4],[-58,34,5],
  [90,-10,4],[-80,-80,5],[10,120,4.5],[-120,-20,4],[120,50,3.5],[-30,-140,4.5],
@@ -509,66 +1224,167 @@ function baueInsel(x, z, gr){
 
 /* ---------------- Häfen: 4 Stück (A rot, B blau, C grün, D orange) ---------------- */
 const haefen = [];
+const HAFEN_WARTE_MAX = 9;
+/* Leuchtturm mit rotierendem Lichtstrahl – steht etwas abseits vom Steg und
+   den Häusern, damit sich nichts überlappt. Dreht sich die ganze Zeit,
+   leuchtet aber nur nachts wirklich auf. */
+function baueLeuchtturm(g){
+  const px = 6.5, pz = -2.5;
+  const basis = new THREE.Mesh(new THREE.CylinderGeometry(.55, .72, 4.2, 16),
+    new THREE.MeshPhongMaterial({color:0xf4efe4, flatShading:true}));
+  basis.position.set(px, 2.1, pz); g.add(basis);
+  for(const hy of [.8, 2.0, 3.2]){
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(.62, .66, .35, 16),
+      new THREE.MeshPhongMaterial({color:0xc23b2e, flatShading:true}));
+    ring.position.set(px, hy, pz); g.add(ring);
+  }
+  const huette = new THREE.Mesh(new THREE.CylinderGeometry(.75, .75, .55, 16), MAT.dunkel);
+  huette.position.set(px, 4.4, pz); g.add(huette);
+  const dach = new THREE.Mesh(new THREE.ConeGeometry(.88, .65, 10),
+    new THREE.MeshPhongMaterial({color:0x8a4530, flatShading:true}));
+  dach.position.set(px, 5.0, pz); g.add(dach);
+
+  const dreher = new THREE.Group();
+  dreher.position.set(px, 4.4, pz);
+  g.add(dreher);
+
+  const lampe = new THREE.Mesh(new THREE.SphereGeometry(.24, 10, 8),
+    new THREE.MeshBasicMaterial({color:0xfff6c8, transparent:true, opacity:0, fog:false}));
+  dreher.add(lampe);
+
+  // Lichtkegel: ein Kegel, der lokal entlang +X aus der Lampe heraus zeigt
+  const strahlGeo = new THREE.ConeGeometry(2.8, 10, 14, 1, true);
+  strahlGeo.translate(0, -5, 0);
+  strahlGeo.rotateZ(Math.PI/2);
+  const strahl = new THREE.Mesh(strahlGeo, new THREE.MeshBasicMaterial({
+    color: 0xfff6c8, transparent: true, opacity: 0, side: THREE.DoubleSide,
+    depthWrite: false, fog: false
+  }));
+  dreher.add(strahl);
+
+  const punktlicht = new THREE.PointLight(0xfff2c8, 0, 14);
+  punktlicht.position.set(px, 4.4, pz);
+  g.add(punktlicht);
+
+  return { dreher, lampe, strahl, punktlicht };
+}
+function leuchttuermeSchritt(dt){
+  // Bei Nacht UND bei dichtem Sturm-Nebel soll der Leuchtturm leuchten –
+  // genau wie im echten Leben, wo er ja gerade bei schlechter Sicht hilft.
+  const aktivierung = Math.max(aktuelleNacht, sturm.staerke);
+  for(const h of haefen){
+    const lt = h.leuchtturm;
+    if(!lt) continue;
+    lt.dreher.rotation.y += dt*1.1;
+    lt.lampe.material.opacity = aktivierung;
+    lt.strahl.material.opacity = aktivierung*.22;
+    lt.punktlicht.intensity = aktivierung*1.4;
+  }
+}
+
+/* Gut lesbares Hafen-Schild als Leinwand-Textur (Canvas), auf einem Pfosten
+   zur offenen See ausgerichtet – so erkennt man den Hafen schon von Weitem. */
+function baueHafenSchild(g, text, farbe){
+  const canvas = document.createElement("canvas");
+  canvas.width = 640; canvas.height = 360;
+  const ctx = canvas.getContext("2d");
+  // Weißer Grund mit dicker farbiger Umrandung – hoher Kontrast
+  ctx.fillStyle = "#fdf6e3";
+  ctx.fillRect(0, 0, 640, 360);
+  const farbHex = "#" + farbe.toString(16).padStart(6, "0");
+  ctx.strokeStyle = farbHex; ctx.lineWidth = 22;
+  ctx.strokeRect(11, 11, 618, 338);
+  // Schmaler Farbbalken oben, damit die Mitte für den Buchstaben frei bleibt
+  ctx.fillStyle = farbHex;
+  ctx.fillRect(22, 22, 596, 46);
+  // Riesiger, dunkler Buchstabe in der Mitte – maximal lesbar
+  ctx.fillStyle = "#14303c";
+  ctx.font = "900 220px 'Trebuchet MS', Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 320, 210);
+  const textur = new THREE.CanvasTexture(canvas);
+  textur.anisotropy = 8;
+
+  const schildZ = 18.5;
+  // Zwei Pfosten LINKS und RECHTS neben dem Schild, nicht dahinter –
+  // sonst verdeckt der Pfosten genau den Buchstaben in der Mitte.
+  for(const seite of [-1, 1]){
+    const pfosten = new THREE.Mesh(new THREE.CylinderGeometry(.11, .13, 4.0, 9), MAT.holz);
+    pfosten.position.set(seite*2.05, 2.0, schildZ);
+    g.add(pfosten);
+  }
+  const schild = new THREE.Mesh(new THREE.PlaneGeometry(4.3, 2.4),
+    new THREE.MeshBasicMaterial({map: textur, side: THREE.DoubleSide, fog:false}));
+  schild.position.set(0, 4.1, schildZ + .1);   // leicht vor die Pfosten gesetzt
+  g.add(schild);
+}
+
 function baueHafen(x, z, name, flaggenFarbe){
   const g = new THREE.Group();
   const l = Math.hypot(x, z);
   const dirX = -x/l, dirZ = -z/l;
   g.rotation.y = Math.atan2(dirX, dirZ);
 
-  const land = new THREE.Mesh(new THREE.CylinderGeometry(7, 8.2, 1.6, 14),
+  const land = new THREE.Mesh(new THREE.CylinderGeometry(10, 11.5, 1.6, 22),
     new THREE.MeshPhongMaterial({color:0xf2d59b, flatShading:true}));
   land.position.y = -.2; g.add(land);
 
-  for(const [hx, hz, farbe] of [[-2.4, -2.2, 0xd35f4b],[2.2, -3, 0x4b86d3]]){
-    const haus = new THREE.Mesh(new THREE.BoxGeometry(2, 1.5, 1.8),
+  for(const [hx, hz, farbe] of [[-3.4, -3.4, 0xd35f4b],[3.2, -4.4, 0x4b86d3],[0, -6.6, 0x6fb37a]]){
+    const haus = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.7, 2),
       new THREE.MeshPhongMaterial({color:farbe, flatShading:true}));
-    haus.position.set(hx, 1.3, hz); g.add(haus);
-    const dach = new THREE.Mesh(new THREE.ConeGeometry(1.7, 1, 4),
+    haus.position.set(hx, 1.4, hz); g.add(haus);
+    const dach = new THREE.Mesh(new THREE.ConeGeometry(1.9, 1.1, 4),
       new THREE.MeshPhongMaterial({color:0x8a4530, flatShading:true}));
-    dach.position.set(hx, 2.5, hz); dach.rotation.y = Math.PI/4; g.add(dach);
+    dach.position.set(hx, 2.75, hz); dach.rotation.y = Math.PI/4; g.add(dach);
   }
 
-  const steg = new THREE.Mesh(new THREE.BoxGeometry(2.6, .3, 10), MAT.holzHell);
-  steg.position.set(0, 1.0, 11); g.add(steg);
-  for(let i=0;i<4;i++){
+  const steg = new THREE.Mesh(new THREE.BoxGeometry(3, .3, 15), MAT.holzHell);
+  steg.position.set(0, 1.0, 14.5); g.add(steg);
+  for(let i=0;i<6;i++){
     for(const s of [-1,1]){
-      const stelze = new THREE.Mesh(new THREE.CylinderGeometry(.14,.14,2.4,6), MAT.holz);
-      stelze.position.set(s*1.1, -.1, 7 + i*2.8); g.add(stelze);
+      const stelze = new THREE.Mesh(new THREE.CylinderGeometry(.14,.14,2.4,9), MAT.holz);
+      stelze.position.set(s*1.25, -.1, 8 + i*2.5); g.add(stelze);
     }
   }
-  const laterne = new THREE.Mesh(new THREE.CylinderGeometry(.08,.1,1.6,6), MAT.dunkel);
-  laterne.position.set(-1, 1.9, 15.4); g.add(laterne);
-  const licht = new THREE.Mesh(new THREE.SphereGeometry(.24,8,6),
-    new THREE.MeshPhongMaterial({color:0xffd23f, emissive:0xaa7700}));
-  licht.position.set(-1, 2.8, 15.4); g.add(licht);
+  for(const seite of [-1,1]){
+    const laterne = new THREE.Mesh(new THREE.CylinderGeometry(.08,.1,1.6,9), MAT.dunkel);
+    laterne.position.set(seite*1.25, 1.9, 20.6); g.add(laterne);
+    const licht = new THREE.Mesh(new THREE.SphereGeometry(.24,10,8),
+      new THREE.MeshPhongMaterial({color:0xffd23f, emissive:0xaa7700}));
+    licht.position.set(seite*1.25, 2.8, 20.6); g.add(licht);
+  }
 
-  const fahnenMast = new THREE.Mesh(new THREE.CylinderGeometry(.07,.09,4.5,6), MAT.dunkel);
-  fahnenMast.position.set(0, 2.2, -1); g.add(fahnenMast);
-  const fahne = new THREE.Mesh(new THREE.BoxGeometry(1.6, .9, .06),
+  const fahnenMast = new THREE.Mesh(new THREE.CylinderGeometry(.08,.1,5.5,9), MAT.dunkel);
+  fahnenMast.position.set(0, 2.6, -1.5); g.add(fahnenMast);
+  const fahne = new THREE.Mesh(new THREE.BoxGeometry(2, 1.1, .06),
     new THREE.MeshPhongMaterial({color:flaggenFarbe, flatShading:true, side:THREE.DoubleSide}));
-  fahne.position.set(.85, 3.9, -1); g.add(fahne);
+  fahne.position.set(1.05, 4.9, -1.5); g.add(fahne);
 
   const figuren = [];
-  for(let i=0;i<5;i++){
+  for(let i=0;i<HAFEN_WARTE_MAX;i++){
     const f = baueFigur(0xffffff);
-    f.position.set((i%2? .7 : -.7), 1.15, 8 + i*1.4);
+    f.position.set((i%2? .8 : -.8), 1.15, 9 + i*1.35);
     f.visible = false;
     g.add(f); figuren.push(f);
   }
+
+  const leuchtturm = baueLeuchtturm(g);
+  baueHafenSchild(g, name.split(" ").pop(), flaggenFarbe);
 
   g.position.set(x, 0, z);
   szene.add(g);
 
   const hafen = {
     name, x, z, flagge: flaggenFarbe,
-    dockX: x + dirX*17, dockZ: z + dirZ*17,
+    dockX: x + dirX*24, dockZ: z + dirZ*24,
     warte: [],          // wartende Fahrgäste: [{ziel}]
     nachschub: Math.random()*8,
     dockZeit: 0, abgefertigt: false,
-    figuren
+    figuren, leuchtturm
   };
   haefen.push(hafen);
-  inseln.push({x, z, r: 7.6});
+  inseln.push({x, z, r: 10.8});
   return hafen;
 }
 baueHafen(-90,  80,  "Hafen A", 0xd94b4b);   // rot
@@ -630,8 +1446,12 @@ function baueNpcSchiff(farbe){
   rumpf.position.y = .4; g.add(rumpf);
   const kabine = new THREE.Mesh(new THREE.BoxGeometry(1, .6, 2), MAT.weiss);
   kabine.position.set(0, 1.1, .2); g.add(kabine);
-  const kamin = new THREE.Mesh(new THREE.CylinderGeometry(.16,.2,.9,8), MAT.dunkel);
+  const kamin = new THREE.Mesh(new THREE.CylinderGeometry(.16,.2,.9,12), MAT.dunkel);
   kamin.position.set(0, 1.8, .7); g.add(kamin);
+  const licht = new THREE.Mesh(new THREE.SphereGeometry(.08, 6, 5),
+    new THREE.MeshBasicMaterial({color:0xfff2cf, transparent:true, opacity:0, fog:false}));
+  licht.position.set(0, 1.5, -2.3); g.add(licht);
+  g.userData.licht = licht;
   szene.add(g);
   return g;
 }
@@ -700,6 +1520,7 @@ function npcSchritt(npc, dt, t){
   npc.obj.rotation.y = npc.richtung;
   npc.obj.rotation.z = Math.sin(t*1.1 + npc.x)*.04*wellenFaktor;
   npc.obj.rotation.x = Math.sin(t*.9 + npc.z)*.03*wellenFaktor;
+  if(npc.obj.userData.licht) npc.obj.userData.licht.material.opacity = aktuelleNacht;
 
   npc.hupPause -= dt;
   if(!spiel.sinkt && npc.hupPause < 0 && Math.hypot(npc.x-spiel.x, npc.z-spiel.z) < 14){
@@ -722,22 +1543,36 @@ function versenkeNpc(npc){
 
 /* ---------------- Multiplayer (WebSocket) ----------------
    Ein sehr schlanker Relay-Server verteilt Position/Richtung/Sinken-
-   Status an alle verbundenen Spieler. Andere Spieler werden vereinfacht
-   dargestellt (wie NPC-Schiffe, nur in einer vom Server zugeteilten
-   Farbe) – kein volles Bug/Heck-Auseinanderbrechen für Fremde.
+   Status an alle verbundenen Spieler. Andere Spieler bekommen dieselbe
+   Titanic-Silhouette wie man selbst (nur mit ihrer Server-Farbe) und
+   sinken auf exakt dieselbe Art – inklusive Auseinanderbrechen und
+   Kaminen, die abfallen. Ihre Wracks bleiben genau wie beim eigenen
+   Schiff dauerhaft am Meeresgrund liegen (Trümmer-System ist geteilt).
 
    WICHTIG: Trag hier die Adresse deines Render-Servers ein
    (https:// wird zu wss://, siehe README des Servers)!             */
 const MULTIPLAYER_URL = "wss://kapitaen-ahoi-server.onrender.com";
 
 let mpSocket = null, mpVerbunden = false, meineId = null;
-const andereSpieler = new Map(); // id -> {mesh, zielX, zielZ, zielRichtung, sinkt, letzteUpdate}
+const andereSpieler = new Map(); // id -> Zustand (siehe mpHoleSpieler)
 
 function aktualisiereMpChip(){
   const c = document.getElementById("chipMp");
   if(!c) return;
   if(mpVerbunden){ c.textContent = "Multiplayer: verbunden (" + andereSpieler.size + " weitere)"; c.className = "chip ok"; }
   else { c.textContent = "Multiplayer: getrennt"; c.className = "chip aus"; }
+}
+function mpEntferneSpieler(id){
+  const p = andereSpieler.get(id);
+  if(!p) return;
+  if(p.gebrochen){
+    if(p.schiff.bug.parent) szene.remove(p.schiff.bug);
+    if(p.schiff.heck.parent) szene.remove(p.schiff.heck);
+  } else if(p.schiff.wurzel.parent){
+    szene.remove(p.schiff.wurzel);
+  }
+  andereSpieler.delete(id);
+  aktualisiereMpChip();
 }
 
 function mpVerbinden(){
@@ -746,8 +1581,7 @@ function mpVerbinden(){
   mpSocket.onopen = () => { mpVerbunden = true; aktualisiereMpChip(); };
   mpSocket.onclose = () => {
     mpVerbunden = false; aktualisiereMpChip();
-    for(const p of andereSpieler.values()) szene.remove(p.mesh);
-    andereSpieler.clear();
+    for(const id of [...andereSpieler.keys()]) mpEntferneSpieler(id);
     setTimeout(mpVerbinden, 4000);   // automatisch wieder versuchen (z.B. Render "aufwachen")
   };
   mpSocket.onerror = () => {};
@@ -756,21 +1590,36 @@ function mpVerbinden(){
     try{ msg = JSON.parse(ev.data); } catch(e){ return; }
     if(msg.typ === "willkommen"){
       meineId = msg.id;
+      if(typeof msg.serverZeit === "number") zeitVersatz = msg.serverZeit - Date.now();
     } else if(msg.typ === "zustand" && msg.id !== meineId){
       mpEmpfangeZustand(msg);
     } else if(msg.typ === "weg"){
-      const p = andereSpieler.get(msg.id);
-      if(p){ szene.remove(p.mesh); andereSpieler.delete(msg.id); aktualisiereMpChip(); }
+      mpEntferneSpieler(msg.id);
     } else if(msg.typ === "hupe" && msg.id !== meineId){
       ton(110, .4, "sawtooth", .08);   // fernes Tuten eines Mitspielers
     }
   };
 }
+function baueSchiffFuerTyp(typ, farbe){
+  if(typ === "concordia") return baueConcordia();
+  if(typ === "uboot") return baueUBoot();
+  if(typ === "wasserflugzeug") return baueWasserflugzeug();
+  return baueSchiffVoll(farbe || 0x999999);
+}
 function mpHoleSpieler(id, farbe){
   let p = andereSpieler.get(id);
   if(!p){
-    const mesh = baueNpcSchiff(farbe || 0x999999);
-    p = { mesh, zielX:0, zielZ:0, zielRichtung:0, sinkt:false, letzteUpdate:performance.now() };
+    p = {
+      farbe: farbe || 0x999999,
+      fahrzeugTyp: "titanic",
+      schiff: baueSchiffFuerTyp("titanic", farbe),
+      x:0, z:0, richtung:0, zielX:0, zielZ:0, zielRichtung:0,
+      tiefe:0, zielTiefe:0, hoehe:0, zielHoehe:0,
+      sinkt:false, sinkZeit:0, gebrochen:false, sinkVy:0,
+      abwurfZeiten:[0,0,0,0], bruchZeit:99,
+      bugEintrag:null, heckEintrag:null, ruheZeit:0,
+      letzteUpdate: performance.now()
+    };
     andereSpieler.set(id, p);
     aktualisiereMpChip();
   }
@@ -778,48 +1627,98 @@ function mpHoleSpieler(id, farbe){
 }
 function mpEmpfangeZustand(msg){
   const p = mpHoleSpieler(msg.id, msg.farbe);
+  const neuerTyp = msg.fahrzeugTyp || "titanic";
+
+  if(neuerTyp !== p.fahrzeugTyp){
+    // Mitspieler hat das Fahrzeug gewechselt: Modell neu bauen,
+    // ein evtl. altes Wrack bleibt dabei ganz normal liegen.
+    if(p.gebrochen){
+      if(p.schiff.bug.parent) szene.remove(p.schiff.bug);
+      if(p.schiff.heck.parent) szene.remove(p.schiff.heck);
+    } else if(p.schiff.wurzel.parent){
+      szene.remove(p.schiff.wurzel);
+    }
+    p.fahrzeugTyp = neuerTyp;
+    p.schiff = baueSchiffFuerTyp(neuerTyp, p.farbe);
+    p.sinkt = false; p.gebrochen = false; p.sinkZeit = 0; p.ruheZeit = 0; p.sinkVy = 0;
+    p.bugEintrag = null; p.heckEintrag = null;
+  }
+
   p.zielX = msg.x; p.zielZ = msg.z; p.zielRichtung = msg.richtung;
-  p.sinkt = !!msg.sinkt;
+  p.zielTiefe = msg.tiefe || 0; p.zielHoehe = msg.hoehe || 0;
+  if(msg.sinkt && !p.sinkt){
+    // Mitspieler beginnt zu sinken – exakt dieselbe Sequenz wie beim Spieler
+    setzeSchiffslichter(p.schiff, 0);
+    p.sinkt = true; p.sinkZeit = 0; p.gebrochen = false; p.sinkVy = 0; p.ruheZeit = 0;
+    p.bugEintrag = null; p.heckEintrag = null;
+    p.abwurfZeiten = zufaelligeAbwurfZeiten();
+    p.bruchZeit = 2.1 + Math.random()*1.8;
+    for(const rb of p.schiff.boote){
+      const w = new THREE.Vector3();
+      rb.getWorldPosition(w);
+      szene.add(rb);
+      rb.position.set(w.x + (Math.random()-.5)*3, .2, w.z + (Math.random()-.5)*3);
+      rb.rotation.set(0, Math.random()*Math.PI*2, 0);
+    }
+  } else if(!msg.sinkt && p.sinkt){
+    // Mitspieler hat neu gestartet: frisches Schiff bauen, das alte Wrack bleibt liegen
+    p.schiff = baueSchiffFuerTyp(p.fahrzeugTyp, p.farbe);
+    p.sinkt = false; p.gebrochen = false; p.sinkZeit = 0; p.ruheZeit = 0; p.sinkVy = 0;
+    p.bugEintrag = null; p.heckEintrag = null;
+  }
   p.letzteUpdate = performance.now();
 }
 let mpLetzteSendeZeit = 0;
 function mpSendeZustand(t){
   if(!mpVerbunden || t - mpLetzteSendeZeit < .1) return;
   mpLetzteSendeZeit = t;
-  mpSocket.send(JSON.stringify({typ:"zustand", x:spiel.x, z:spiel.z, richtung:spiel.richtung, sinkt:spiel.sinkt}));
+  mpSocket.send(JSON.stringify({typ:"zustand", x:spiel.x, z:spiel.z, richtung:spiel.richtung, sinkt:spiel.sinkt, fahrzeugTyp, tiefe:spiel.tiefe, hoehe:spiel.hoehe}));
 }
 function mpSendeHupe(){
   if(mpVerbunden) mpSocket.send(JSON.stringify({typ:"hupe"}));
 }
 function mpSchritt(dt, t){
-  for(const p of andereSpieler.values()){
+  for(const [id, p] of andereSpieler){
+    const vorX = p.x, vorZ = p.z;
     // Sanft in Richtung der zuletzt empfangenen Position/Richtung gleiten
     const f = Math.min(1, dt*6);
-    const dx = p.zielX - p.mesh.position.x, dz = p.zielZ - p.mesh.position.z;
-    p.mesh.position.x += dx*f;
-    p.mesh.position.z += dz*f;
-    let diff = p.zielRichtung - p.mesh.rotation.y;
+    p.x += (p.zielX - p.x)*f;
+    p.z += (p.zielZ - p.z)*f;
+    let diff = p.zielRichtung - p.richtung;
     while(diff >  Math.PI) diff -= Math.PI*2;
     while(diff < -Math.PI) diff += Math.PI*2;
-    p.mesh.rotation.y += diff*f;
+    p.richtung += diff*f;
 
     if(p.sinkt){
-      p.mesh.position.y += (GRUND_TIEFE + 2 - p.mesh.position.y) * Math.min(1, dt*.6);
-      p.mesh.rotation.x += (-.5 - p.mesh.rotation.x) * Math.min(1, dt*.6);
-      p.mesh.rotation.z += (.4 - p.mesh.rotation.z) * Math.min(1, dt*.6);
+      if(!p.gebrochen){
+        p.sinkZeit += dt;
+        schiffPhase1Schritt(p, p.schiff, dt);
+        if(p.sinkZeit > p.bruchZeit) brichAuseinander(p, p.schiff);
+      }
+      // Nach dem Brechen übernimmt das gemeinsame truemmerSchritt() automatisch
     } else {
-      const wy = .05 + wellenHoehe(p.mesh.position.x, p.mesh.position.z, t)*.35;
-      p.mesh.position.y += (wy - p.mesh.position.y) * Math.min(1, dt*3);
-      p.mesh.rotation.x += (0 - p.mesh.rotation.x) * Math.min(1, dt*2);
-      p.mesh.rotation.z += (Math.sin(t*1.1 + p.mesh.position.x)*.04 - p.mesh.rotation.z) * Math.min(1, dt*2);
+      const w = p.schiff.wurzel;
+      p.tiefe += (p.zielTiefe - p.tiefe) * f;
+      p.hoehe += (p.zielHoehe - p.hoehe) * f;
+      if(p.fahrzeugTyp === "uboot"){
+        w.position.set(p.x, .1 - p.tiefe, p.z);
+      } else if(p.fahrzeugTyp === "wasserflugzeug"){
+        const amWasser = p.hoehe <= .05;
+        w.position.set(p.x, amWasser ? 1.2 + wellenHoehe(p.x, p.z, t)*.35 : p.hoehe, p.z);
+      } else {
+        w.position.set(p.x, .05 + wellenHoehe(p.x, p.z, t)*.35, p.z);
+      }
+      w.rotation.y = p.richtung;
+      w.rotation.z = Math.sin(t*1.1 + p.x)*.04*wellenFaktor;
+      w.rotation.x = Math.sin(t*.9 + p.z)*.03*wellenFaktor;
+      const rvx = dt > 0 ? (p.x-vorX)/dt : 0, rvz = dt > 0 ? (p.z-vorZ)/dt : 0;
+      emittiereRauch(p.schiff, rvx, rvz);
+      setzeSchiffslichter(p.schiff, aktuelleNacht);
+      if(p.schiff.propeller) p.schiff.propeller.rotation.z += dt*18;
     }
 
     // Wer schon 12 s nichts mehr gesendet hat, ist wohl weg (z.B. Tab geschlossen ohne "close")
-    if(performance.now() - p.letzteUpdate > 12000){
-      szene.remove(p.mesh);
-      andereSpieler.delete([...andereSpieler].find(([,v]) => v === p)?.[0]);
-      aktualisiereMpChip();
-    }
+    if(performance.now() - p.letzteUpdate > 12000) mpEntferneSpieler(id);
   }
 }
 mpVerbinden();
@@ -897,11 +1796,39 @@ addEventListener("keydown", e => {
   tasten[e.key.toLowerCase()] = true;
   if(e.key===" "){ hupe(); e.preventDefault(); }
   if(e.key.toLowerCase()==="r") neustart();
+  if(e.key.toLowerCase()==="g") ankerUmschalten();
 });
 addEventListener("keyup", e => { tasten[e.key.toLowerCase()] = false; });
 
+/* ---------------- Touch-Steuerung fürs Handy ---------------- */
+const touch = { links:false, rechts:false, vor:false, zurueck:false, boost:false };
+function bindHaltKnopf(id, setter){
+  const el = document.getElementById(id);
+  if(!el) return;
+  const an  = e => { e.preventDefault(); setter(true); };
+  const aus = e => { e.preventDefault(); setter(false); };
+  el.addEventListener("pointerdown", an);
+  el.addEventListener("pointerup", aus);
+  el.addEventListener("pointerleave", aus);
+  el.addEventListener("pointercancel", aus);
+  el.addEventListener("contextmenu", e => e.preventDefault());
+}
+bindHaltKnopf("mLinks",    v => touch.links = v);
+bindHaltKnopf("mRechts",   v => touch.rechts = v);
+bindHaltKnopf("mVor",      v => touch.vor = v);
+bindHaltKnopf("mZurueck",  v => touch.zurueck = v);
+bindHaltKnopf("mBoost",    v => touch.boost = v);
+document.getElementById("mHupe")?.addEventListener("pointerdown", e => { e.preventDefault(); hupe(); });
+document.getElementById("mHupe")?.addEventListener("contextmenu", e => e.preventDefault());
+document.getElementById("mAnker")?.addEventListener("pointerdown", e => { e.preventDefault(); ankerUmschalten(); });
+document.getElementById("mAnker")?.addEventListener("contextmenu", e => e.preventDefault());
+// Steuerkreuz nur auf Touch-Geräten einblenden, damit es am Desktop nicht stört
+if("ontouchstart" in window || navigator.maxTouchPoints > 0){
+  document.getElementById("mobileSteuerung")?.classList.add("aktiv");
+}
+
 /* ---------------- Gamepad-API ---------------- */
-const mapping = { lenk:null, gas:null, rueck:null, boost:null };
+const mapping = { lenk:null, gas:null, rueck:null, boost:null, tauchen:null };
 let hupenGedrueckt = false;
 function lesePads(){ return navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : []; }
 function padName(idx){
@@ -924,8 +1851,8 @@ function aktuelleLenkung(){
     }
   }
   let s = 0;
-  if(tasten["arrowleft"]||tasten["a"]) s -= 1;
-  if(tasten["arrowright"]||tasten["d"]) s += 1;
+  if(tasten["arrowleft"]||tasten["a"]||touch.links) s -= 1;
+  if(tasten["arrowright"]||tasten["d"]||touch.rechts) s += 1;
   return s;
 }
 function aktuellerSchub(){
@@ -936,7 +1863,7 @@ function aktuellerSchub(){
       const {ruhe, voll} = mapping.gas;
       vor = THREE.MathUtils.clamp((v-ruhe)/((voll-ruhe)||1), 0, 1);
     }
-  } else if(tasten["arrowup"]||tasten["w"]) vor = 1;
+  } else if(tasten["arrowup"]||tasten["w"]||touch.vor) vor = 1;
 
   let zurueck = 0;
   if(mapping.rueck){
@@ -952,16 +1879,30 @@ function aktuellerSchub(){
       }
     }
   }
-  if(tasten["arrowdown"]||tasten["s"]) zurueck = Math.max(zurueck, .7);
+  if(tasten["arrowdown"]||tasten["s"]||touch.zurueck) zurueck = Math.max(zurueck, .7);
   return zurueck > .05 ? -zurueck * .7 : vor;
 }
 function boostGedrueckt(){
-  if(tasten["e"]) return true;
+  if(tasten["e"]||touch.boost) return true;
   if(mapping.boost){
     const p = lesePads().find(p => p.index===mapping.boost.pad);
     if(p && p.buttons[mapping.boost.knopf] && p.buttons[mapping.boost.knopf].pressed) return true;
   }
   return false;
+}
+function aktuelleTauchrichtung(){
+  // -1 = auftauchen, +1 = abtauchen
+  if(mapping.tauchen){
+    const v = leseAchse(mapping.tauchen);
+    if(v !== null){
+      const {ruhe, voll} = mapping.tauchen;
+      const s = THREE.MathUtils.clamp((v-ruhe)/((voll-ruhe)||1), -1, 1);
+      if(Math.abs(s) > .06) return s;
+    }
+  }
+  if(tasten["f"]) return 1;
+  if(tasten["c"]) return -1;
+  return 0;
 }
 function istBelegterKnopf(padIdx, knopfIdx){
   if(mapping.rueck && mapping.rueck.typ==="knopf" && padIdx===mapping.rueck.pad && knopfIdx===mapping.rueck.knopf) return true;
@@ -982,17 +1923,48 @@ const wizard = document.getElementById("wizard");
 const karte = document.getElementById("karteInhalt");
 let wizardAktiv = true, wizardAbbruch = null;
 
+const FAHRZEUG_NAMEN = { titanic:"Titanic", concordia:"Costa Concordia", uboot:"U-Boot", wasserflugzeug:"Wasserflugzeug" };
 function zeigeStart(){
   wizardAktiv = true; wizard.classList.remove("versteckt");
-  const anzahl = lesePads().length;
   karte.innerHTML = `
     <div class="gross">🚢</div>
-    <h1>Kapitän Ahoi! – Titanic-Edition</h1>
-    <p>Bring die <b>Fahrgäste</b> zu ihrem Zielhafen – ihre <b>Farbe</b> verrät,
-    zu welcher <b>Hafenfahne</b> (A rot, B blau, C grün, D orange) sie wollen.
-    Sammle <b>Sterne</b>, weich <b>Eisbergen</b> und anderen Schiffen aus –
-    und pass auf: Nachts und bei <b>Sturm</b> wird's ungemütlich! 🌙🌩️<br>
-    <span class="klein">Boost: Taste <b>E</b> (oder eigener Knopf am Lenkrad).</span></p>
+    <h1>Kapitän Ahoi!</h1>
+    <p>Womit möchtest du fahren?</p>
+    <button class="knopf" id="wTitanic">🚢 Titanic</button>
+    <button class="knopf" id="wConcordia">🛳️ Costa Concordia</button>
+    <button class="knopf" id="wUboot">🤿 U-Boot <span class="klein">(Wracks ansehen)</span></button>
+    <button class="knopf" id="wFlugzeug">🛩️ Wasserflugzeug</button>
+    <p class="klein">Alle vier können Fahrgäste mitnehmen und an Häfen anlegen. Das U-Boot
+    kann zusätzlich tauchen und gesunkene Wracks am Meeresgrund besuchen. Das
+    Wasserflugzeug kann bei genug Fahrt abheben und über Gefahren hinwegfliegen.</p>`;
+  document.getElementById("wTitanic").onclick = () => { fahrzeugTyp = "titanic"; zeigeCockpitIntro(); };
+  document.getElementById("wConcordia").onclick = () => { fahrzeugTyp = "concordia"; zeigeCockpitIntro(); };
+  document.getElementById("wUboot").onclick = () => { fahrzeugTyp = "uboot"; zeigeCockpitIntro(); };
+  document.getElementById("wFlugzeug").onclick = () => { fahrzeugTyp = "wasserflugzeug"; zeigeCockpitIntro(); };
+}
+function zeigeCockpitIntro(){
+  const anzahl = lesePads().length;
+  let zusatz;
+  if(fahrzeugTyp === "uboot"){
+    zusatz = `<p>Bring die <b>Fahrgäste</b> zu ihrem Zielhafen – und wenn du magst,
+       tauche zwischendurch runter und schau dir gesunkene Wracks am Meeresgrund an.
+       Zum Tauchen brauchst du noch eine Taste/Achse für die Tiefe –
+       das fragen wir im Cockpit-Check gleich mit ab.</p>`;
+  } else if(fahrzeugTyp === "wasserflugzeug"){
+    zusatz = `<p>Bring die <b>Fahrgäste</b> zu ihrem Zielhafen – wie mit dem Schiff, nur
+       schneller: bei genug Fahrt kannst du <b>abheben</b> und über Eisberge und
+       Schiffe hinwegfliegen! Dafür brauchst du noch eine Taste/Achse für die Höhe.</p>`;
+  } else {
+    zusatz = `<p>Bring die <b>Fahrgäste</b> zu ihrem Zielhafen – ihre <b>Farbe</b> verrät,
+       zu welcher <b>Hafenfahne</b> (A rot, B blau, C grün, D orange) sie wollen.
+       Sammle <b>Sterne</b>, weich <b>Eisbergen</b> und anderen Schiffen aus –
+       und pass auf: Nachts und bei <b>Sturm</b> wird's ungemütlich! 🌙🌩️</p>`;
+  }
+  karte.innerHTML = `
+    <div class="gross">🕹️</div>
+    <h1>${FAHRZEUG_NAMEN[fahrzeugTyp]}</h1>
+    ${zusatz}
+    <p class="klein">Boost: Taste <b>E</b> (oder eigener Knopf am Lenkrad).</p>
     <p><b>${anzahl}</b> Steuergerät${anzahl===1?"":"e"} gefunden.
     ${anzahl===0?"<br><span class='klein'>Tipp: Lenkrad kurz drehen oder einen Knopf drücken, damit der Browser es erkennt.</span>":""}</p>
     <button class="knopf" id="btnCheck">🕹️ Cockpit-Check starten</button>
@@ -1134,12 +2106,52 @@ function schrittBoost(){
       if(ki >= 0){
         erledigt = true; clearInterval(timer);
         mapping.boost = {pad:p.index, knopf:ki};
-        zeigeFertig(); return;
+        naechsterSchrittNachBoost(); return;
       }
     }
   }, 50);
-  document.getElementById("btnSkipBoost").onclick = () => { erledigt = true; clearInterval(timer); mapping.boost = null; zeigeFertig(); };
+  document.getElementById("btnSkipBoost").onclick = () => { erledigt = true; clearInterval(timer); mapping.boost = null; naechsterSchrittNachBoost(); };
   wizardAbbruch = () => clearInterval(timer);
+}
+function naechsterSchrittNachBoost(){
+  if(fahrzeugTyp === "uboot" || fahrzeugTyp === "wasserflugzeug") schrittTauchen();
+  else zeigeFertig();
+}
+function schrittTauchen(){
+  const label = fahrzeugTyp === "wasserflugzeug" ? "Höhen-Achse" : "Tauchgang-Achse";
+  const beschreibung = fahrzeugTyp === "wasserflugzeug"
+    ? "Nur fürs Wasserflugzeug: beweg den Hebel/die Achse, die du zum <b>Steigen und Sinken</b> benutzen willst – erst in eine Richtung, dann zurück."
+    : "Nur fürs U-Boot: beweg den Hebel/die Achse, die du zum <b>Auf- und Abtauchen</b> benutzen willst – erst in eine Richtung, dann zurück.";
+  findeBewegteAchse("Schritt 5: " + label, beschreibung, "🤿",
+    ({pad, achse, start}) => {
+      let extrem = start;
+      karte.innerHTML = `
+        <div class="gross">🤿</div>
+        <h2>Achse gefunden!</h2>
+        <p>Beweg sie einmal ganz zum Anschlag in <b>eine</b> Richtung.</p>
+        <div class="balken"><div id="tauchBalken"></div></div>
+        <button class="knopf" id="btnTauchFertig">✅ Passt!</button>
+        <button class="knopf leise" id="btnTauchSkip">Ohne Achse (Tasten F/C)</button>`;
+      const t = setInterval(() => {
+        const p = lesePads().find(p => p.index===pad);
+        if(!p) return;
+        const v = p.axes[achse];
+        if(Math.abs(v-start) > Math.abs(extrem-start)) extrem = v;
+        const b = document.getElementById("tauchBalken");
+        if(b) b.style.width = Math.min(100, Math.abs(v-start)/(Math.abs(extrem-start)||1)*100) + "%";
+      }, 50);
+      document.getElementById("btnTauchFertig").onclick = () => {
+        clearInterval(t);
+        mapping.tauchen = {pad, achse, ruhe:start, voll:extrem};
+        zeigeFertig();
+      };
+      document.getElementById("btnTauchSkip").onclick = () => {
+        clearInterval(t);
+        mapping.tauchen = null;
+        zeigeFertig();
+      };
+      wizardAbbruch = () => clearInterval(t);
+    });
 }
 function zeigeFertig(){
   const rueckText = mapping.rueck
@@ -1148,11 +2160,19 @@ function zeigeFertig(){
   const boostText = mapping.boost
     ? "Boost: Knopf " + mapping.boost.knopf + " am " + padName(mapping.boost.pad)
     : "Boost: Taste E";
+  const tauchText = (fahrzeugTyp === "uboot" || fahrzeugTyp === "wasserflugzeug")
+    ? "<br><b>" + (mapping.tauchen
+        ? (fahrzeugTyp === "wasserflugzeug" ? "Höhe: eigene Achse" : "Tauchen: eigene Achse")
+        : (fahrzeugTyp === "wasserflugzeug" ? "Höhe: Taste F (runter) / C (rauf, ab genug Fahrt)" : "Tauchen: Taste F (runter) / C (rauf)")) + "</b>"
+    : "";
+  let abschlussHinweis = "Und denk dran: Eisbergen ausweichen!";
+  if(fahrzeugTyp === "uboot") abschlussHinweis = "Viel Spaß beim Wracks-Erkunden am Meeresgrund!";
+  if(fahrzeugTyp === "wasserflugzeug") abschlussHinweis = "Erst genug Fahrt aufnehmen, dann abheben!";
   karte.innerHTML = `
     <div class="gross">🎉</div>
     <h2>Alles klar, Kapitän!</h2>
-    <p>Lenkrad und Gashebel sind startklar.<br><b>${rueckText}</b><br><b>${boostText}</b><br>
-    <span class="klein">Jeder andere Knopf hupt das Dampferhorn. 📯 Und denk dran: Eisbergen ausweichen!</span></p>
+    <p>Lenkrad und Gashebel sind startklar.<br><b>${rueckText}</b><br><b>${boostText}</b>${tauchText}<br>
+    <span class="klein">Jeder andere Knopf hupt das Dampferhorn. 📯 ${abschlussHinweis}</span></p>
     <button class="knopf" id="btnLos">⚓ Leinen los!</button>`;
   document.getElementById("btnLos").onclick = () => schliesseWizard();
 }
@@ -1162,6 +2182,7 @@ function schliesseWizard(){
   wizardAktiv = false;
   aktualisiereChips();
   ton(440,.15,"triangle");
+  neustart();   // frisches Fahrzeug passend zur (evtl. neu gewählten) Auswahl bauen
 }
 function zeigeUntergang(){
   wizardAktiv = false;
@@ -1169,18 +2190,56 @@ function zeigeUntergang(){
   const gaeste = spiel.gaeste.length;
   const grundText = spiel.untergangsGrund === "schiff"
     ? "Ein Zusammenstoß mit einem anderen Schiff!"
+    : spiel.untergangsGrund === "schlange"
+    ? "Eine giftige Seeschlange hat zugebissen!"
     : "Ein Eisberg! Genau wie damals …";
-  karte.innerHTML = `
-    <div class="gross">🧊🚢💦</div>
-    <h2>Glub glub … das Schiff ist gesunken!</h2>
-    <p>${grundText}<br>Erst fielen die Schornsteine, dann brach das Schiff in zwei Teile …<br>
-    ${gaeste>0 ? `<b>Aber:</b> Alle ${gaeste} Fahrgäste sitzen sicher in den Rettungsbooten! 🛟<br>` : ""}
-    <span class="klein">Das Wrack bleibt für immer am Meeresgrund liegen – schau es dir bei der nächsten Fahrt an!</span></p>
-    <button class="knopf" id="btnReset">🔁 Neues Schiff, neues Glück!</button>
-    <p class="klein">Gesammelte Sterne bleiben dir erhalten. ⭐</p>`;
+  if(fahrzeugTyp === "uboot"){
+    karte.innerHTML = `
+      <div class="gross">🧊🤿💦</div>
+      <h2>Havarie! Das U-Boot ist gesunken!</h2>
+      <p>${grundText}<br>Es kippte zur Seite und sank auf den Meeresgrund …<br>
+      ${gaeste>0 ? `<b>Aber:</b> Alle ${gaeste} Fahrgäste konnten schwimmend das nächste Ufer erreichen! 🏊<br>` : ""}
+      <span class="klein">Das Wrack bleibt für immer dort liegen – schau es dir beim nächsten Tauchgang an!</span></p>
+      <button class="knopf" id="btnReset">🔁 Neues U-Boot!</button>
+      <p class="klein">Gesammelte Sterne bleiben dir erhalten. ⭐</p>`;
+  } else if(fahrzeugTyp === "wasserflugzeug"){
+    karte.innerHTML = `
+      <div class="gross">🧊🛩️💦</div>
+      <h2>Abgestürzt! Das Wasserflugzeug ist gesunken!</h2>
+      <p>${grundText}<br>Es kippte zur Seite und sank auf den Meeresgrund …<br>
+      ${gaeste>0 ? `<b>Aber:</b> Alle ${gaeste} Fahrgäste konnten schwimmend das nächste Ufer erreichen! 🏊<br>` : ""}
+      <span class="klein">Das Wrack bleibt für immer dort liegen!</span></p>
+      <button class="knopf" id="btnReset">🔁 Neues Wasserflugzeug!</button>
+      <p class="klein">Gesammelte Sterne bleiben dir erhalten. ⭐</p>`;
+  } else {
+    karte.innerHTML = `
+      <div class="gross">🧊🚢💦</div>
+      <h2>Glub glub … das Schiff ist gesunken!</h2>
+      <p>${grundText}<br>Erst fielen die Schornsteine, dann brach das Schiff in zwei Teile …<br>
+      ${gaeste>0 ? `<b>Aber:</b> Alle ${gaeste} Fahrgäste sitzen sicher in den Rettungsbooten! 🛟<br>` : ""}
+      <span class="klein">Das Wrack bleibt für immer am Meeresgrund liegen – schau es dir bei der nächsten Fahrt an!</span></p>
+      <button class="knopf" id="btnReset">🔁 Neues Schiff, neues Glück!</button>
+      <p class="klein">Gesammelte Sterne bleiben dir erhalten. ⭐</p>`;
+  }
   document.getElementById("btnReset").onclick = () => neustart();
 }
 document.getElementById("setupBtn").onclick = () => zeigeStart();
+document.getElementById("fahrzeugBtn").onclick = () => zeigeFahrzeugSchnellwahl();
+function zeigeFahrzeugSchnellwahl(){
+  wizardAktiv = true; wizard.classList.remove("versteckt");
+  karte.innerHTML = `
+    <div class="gross">🚢</div>
+    <h1>Fahrzeug wechseln</h1>
+    <p class="klein">Deine Lenkrad-/Gas-/Boost-Einstellungen bleiben erhalten.</p>
+    <button class="knopf" id="wsTitanic">🚢 Titanic</button>
+    <button class="knopf" id="wsConcordia">🛳️ Costa Concordia</button>
+    <button class="knopf" id="wsUboot">🤿 U-Boot <span class="klein">(Wracks ansehen)</span></button>
+    <button class="knopf" id="wsFlugzeug">🛩️ Wasserflugzeug</button>`;
+  document.getElementById("wsTitanic").onclick = () => { fahrzeugTyp = "titanic"; schliesseWizard(); };
+  document.getElementById("wsConcordia").onclick = () => { fahrzeugTyp = "concordia"; schliesseWizard(); };
+  document.getElementById("wsUboot").onclick = () => { fahrzeugTyp = "uboot"; schliesseWizard(); };
+  document.getElementById("wsFlugzeug").onclick = () => { fahrzeugTyp = "wasserflugzeug"; schliesseWizard(); };
+}
 document.getElementById("resetBtn").onclick = () => neustart();
 addEventListener("gamepadconnected", () => { aktualisiereChips(); if(wizardAktiv) zeigeStart(); });
 addEventListener("gamepaddisconnected", () => aktualisiereChips());
@@ -1193,12 +2252,12 @@ function aktualisiereChips(){
 }
 
 /* ---------------- Spiel-Zustand ---------------- */
-const KAPAZITAET = 6;
 const RAND = 240;
-const spiel = { x:0, z:0, richtung:0, tempo:0, sterne:0,
+const spiel = { x:0, z:0, richtung:0, tempo:0, sterne:0, tiefe:0, hoehe:0, ankerUnten:false,
                 gaeste: [],                    // [{ziel: hafen}]
                 boostEnergie:1, boostAktiv:false,
-                sinkt:false, sinkZeit:0, gebrochen:false,
+                sinkt:false, sinkZeit:0, gebrochen:false, sinkVy:0,
+                abwurfZeiten:[0,0,0,0], bruchZeit:2.6,
                 untergangsGrund: "eisberg",
                 bugEintrag:null, heckEintrag:null,
                 ruheZeit:0, overlayGezeigt:false };
@@ -1208,13 +2267,96 @@ const hudGaeste = document.getElementById("hudGaeste");
 const hudBoost = document.getElementById("hudBoost");
 const uhr = new THREE.Clock();
 
+/* Ziel-Pfeile: schweben über dem Schiff und zeigen zur Richtung jedes
+   Zielhafens, den aktuell an Bord befindliche Fahrgäste ansteuern wollen.
+   Bis zu drei verschiedene Ziele werden gleichzeitig angezeigt, übereinander
+   gestapelt, jeweils in der Flaggenfarbe des Zielhafens eingefärbt. */
+const ZIEL_PFEIL_MAX = 3;
+const zielPfeile = [];
+function baueZielPfeil(){
+  const g = new THREE.Group();
+  const koerper = new THREE.Mesh(new THREE.ConeGeometry(.4, 1.3, 4),
+    new THREE.MeshBasicMaterial({color:0xffffff, fog:false}));
+  koerper.rotation.x = Math.PI/2;   // Spitze zeigt jetzt entlang +Z
+  g.add(koerper);
+  const schaft = new THREE.Mesh(new THREE.CylinderGeometry(.09, .09, .8, 8),
+    new THREE.MeshBasicMaterial({color:0xffffff, fog:false}));
+  schaft.rotation.x = Math.PI/2;
+  schaft.position.z = -.9;
+  g.add(schaft);
+  g.visible = false;
+  szene.add(g);
+  return {g, koerper, schaft};
+}
+for(let i=0;i<ZIEL_PFEIL_MAX;i++) zielPfeile.push(baueZielPfeil());
+
+function aktualisiereZielPfeile(){
+  const ziele = [...new Set(spiel.gaeste.map(g => g.ziel))].slice(0, ZIEL_PFEIL_MAX);
+  zielPfeile.forEach((pfeil, i) => {
+    const ziel = ziele[i];
+    pfeil.g.visible = !!ziel && !spiel.sinkt;
+    if(ziel){
+      pfeil.ziel = ziel;
+      pfeil.koerper.material.color.set(ziel.flagge);
+      pfeil.schaft.material.color.set(ziel.flagge);
+    }
+  });
+}
+function zielPfeileSchritt(t){
+  for(let i=0;i<zielPfeile.length;i++){
+    const pfeil = zielPfeile[i];
+    if(!pfeil.g.visible) continue;
+    const bearing = Math.atan2(pfeil.ziel.x-spiel.x, pfeil.ziel.z-spiel.z);
+    pfeil.g.rotation.y = bearing;
+    pfeil.g.position.set(spiel.x, 6.2 + i*1.15 + Math.sin(t*1.6+i)*.12, spiel.z);
+  }
+}
+
+/* Fahrgäste laufen während der Fahrt gemütlich auf ihrem Stück Deck herum,
+   statt nur starr zu stehen – jeder pendelt in der Nähe seines Platzes. */
+function gaesteWanderSchritt(schiffObj, dt, t){
+  schiffObj.gaesteFiguren.forEach((f, i) => {
+    if(!f.visible) return;
+    const w = schiffObj.wanderZiel[i];
+    const dx = w.zielX - f.position.x, dz = w.zielZ - f.position.z;
+    const d = Math.hypot(dx, dz);
+    if(d < .15){
+      w.wartezeit -= dt;
+      if(w.wartezeit <= 0){
+        w.zielX = w.heimX + (Math.random()-.5)*.8;
+        w.zielZ = w.heimZ + (Math.random()-.5)*1.7;
+        w.wartezeit = 1.5 + Math.random()*3.5;
+      }
+    } else {
+      const tempo = .45;
+      f.position.x += (dx/d)*tempo*dt;
+      f.position.z += (dz/d)*tempo*dt;
+      f.rotation.y = Math.atan2(dx, dz);
+      f.position.y = 2.28 + Math.abs(Math.sin(t*7 + i*2))*.025;   // kleines Lauf-Wippen
+    }
+  });
+}
+
 function aktualisiereGaesteFiguren(){
   hudGaeste.textContent = spiel.gaeste.length;
   schiff.gaesteFiguren.forEach((f, i) => {
     const gast = spiel.gaeste[i];
+    const wardSichtbar = f.visible;
     f.visible = !!gast;
-    if(gast) f.userData.mat.color.set(gast.ziel.flagge);
+    if(gast){
+      f.userData.mat.color.set(gast.ziel.flagge);
+      if(!wardSichtbar){
+        // Frisch zugestiegen: sauber am Heimatplatz starten, statt an der
+        // Stelle, wo der vorherige Fahrgast zuletzt herumgelaufen ist.
+        const w = schiff.wanderZiel[i];
+        f.position.set(w.heimX, 2.28, w.heimZ);
+        f.rotation.y = 0;
+        w.zielX = w.heimX; w.zielZ = w.heimZ;
+        w.wartezeit = .8 + Math.random()*2;
+      }
+    }
   });
+  aktualisiereZielPfeile();
 }
 
 /* ---------------- Trümmer-System ----------------
@@ -1223,46 +2365,98 @@ function aktualisiereGaesteFiguren(){
 const truemmer = [];
 const gerettete = [];   // Fahrgäste, die in Rettungsbooten sitzen
 
-function loeseSchornstein(s){
+function schornsteinFallTon(){
+  // Metallisches Ächzen statt eines simplen Pieptons
+  ton(85 + Math.random()*25, .32, "sawtooth", .17);
+  setTimeout(() => ton(260 + Math.random()*70, .14, "square", .08), 55);
+  setTimeout(() => ton(48, .42, "triangle", .17), 130);
+}
+function zufaelligeAbwurfZeiten(){
+  // Vier zufällig gestreute Zeitpunkte, in zufälliger Reihenfolge den
+  // Schornsteinen zugeteilt – nicht mehr stur "vorne zuerst".
+  const zeiten = [0.7,1.1,1.5,1.9].map(b => b + Math.random()*1.3);
+  for(let i=zeiten.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [zeiten[i], zeiten[j]] = [zeiten[j], zeiten[i]];
+  }
+  return zeiten;
+}
+function loeseSchornstein(z, s){
   szene.attach(s);
-  const fx = -Math.sin(spiel.richtung), fz = -Math.cos(spiel.richtung);
+  const fx = -Math.sin(z.richtung), fz = -Math.cos(z.richtung);
   truemmer.push({
     typ: "schornstein", obj: s,
-    vx: fx*1.5 + (Math.random()-.5)*2, vy: .8, vz: fz*1.5 + (Math.random()-.5)*2,
-    drehX: (Math.random()-.5)*3, drehZ: (Math.random()-.5)*3,
+    vx: fx*1.3 + (Math.random()-.5)*3.2, vy: .6 + Math.random()*.6, vz: fz*1.3 + (Math.random()-.5)*3.2,
+    drehX: (Math.random()-.5)*4, drehZ: (Math.random()-.5)*4,
     nass: s.position.y < .3, gelandet: false
   });
-  ton(150 + Math.random()*80, .35, "square", .14);
+  schornsteinFallTon();
 }
 
-function brichAuseinander(){
-  if(spiel.gebrochen) return;
-  spiel.gebrochen = true;
+function brichAuseinander(z, schiffObj){
+  if(z.gebrochen) return;
+  z.gebrochen = true;
 
-  for(const s of schiff.schornsteine) if(s.parent !== szene) loeseSchornstein(s);
+  for(const s of schiffObj.schornsteine) if(s.parent !== szene) loeseSchornstein(z, s);
 
-  szene.attach(schiff.bug);
-  szene.attach(schiff.heck);
-  szene.remove(schiff.wurzel);
+  szene.attach(schiffObj.bug);
+  szene.attach(schiffObj.heck);
+  szene.remove(schiffObj.wurzel);
 
-  spiel.bugEintrag = {
-    typ: "bug", obj: schiff.bug, zeit: 0, vy: -1.5, gelandet: false, setzZeit: 0,
-    zielRotZ: (Math.random()-.5)*.9, richtung: spiel.richtung
+  z.bugEintrag = {
+    typ: "bug", obj: schiffObj.bug, zeit: 0, vy: -1.5, gelandet: false, setzZeit: 0,
+    zielRotZ: (Math.random()-.5)*.9, richtung: z.richtung
   };
-  spiel.heckEintrag = {
-    typ: "heck", obj: schiff.heck, zeit: 0, vy: 0, gelandet: false, setzZeit: 0,
-    zielRotZ: .9 + Math.random()*.5, richtung: spiel.richtung
+  z.heckEintrag = {
+    typ: "heck", obj: schiffObj.heck, zeit: 0, vy: 0, gelandet: false, setzZeit: 0,
+    zielRotZ: .9 + Math.random()*.5, richtung: z.richtung
   };
-  truemmer.push(spiel.bugEintrag, spiel.heckEintrag);
+  truemmer.push(z.bugEintrag, z.heckEintrag);
 
   bruchTon();
-  spritzer(schiff.bug.position.x, .6, schiff.bug.position.z, 25, 8);
+  spritzer(schiffObj.bug.position.x, .6, schiffObj.bug.position.z, 25, 8);
+}
+
+/* Sinkphase, bevor das Schiff bricht: erst langsam (an der Oberfläche),
+   sobald es einmal richtig eingetaucht ist, geht's deutlich schneller –
+   genau wie beim echten Untergang. Wird für Spieler UND Mitspieler benutzt. */
+function schiffPhase1Schritt(z, schiffObj, dt){
+  const w = schiffObj.wurzel;
+  const unterWasser = w.position.y < -.3;
+  z.sinkVy = (z.sinkVy||0) - dt * (unterWasser ? 3.6 : 0.55);
+  w.position.y = Math.min(.12, w.position.y + z.sinkVy*dt);
+  w.position.x = z.x; w.position.z = z.z;
+  w.rotation.y = z.richtung;
+  w.rotation.x = -Math.min(.58, z.sinkZeit*.13 + (unterWasser ? .2 : 0));
+  w.rotation.z = Math.sin(z.sinkZeit*.9)*.06;
+
+  schiffObj.schornsteine.forEach((s, i) => {
+    if(z.sinkZeit > z.abwurfZeiten[i] && s.parent !== szene) loeseSchornstein(z, s);
+  });
+
+  if(Math.random() < .6) spritzer(z.x, .4, z.z, 1, 6);
 }
 
 function truemmerSchritt(dt, t){
   for(const d of truemmer){
     if(d.gelandet && d.typ !== "bug" && d.typ !== "heck" && d.typ !== "npcwrack") continue;
     const o = d.obj;
+
+    // Sicherheitsnetz: falls ein Teil aus irgendeinem Grund nie richtig
+    // landet (z.B. Netzwerk-Aussetzer bei Mitspielern), zwingen wir es
+    // spätestens nach 18 s sanft auf den Grund, statt es für immer an der
+    // Oberfläche hängen zu lassen.
+    if(!d.gelandet){
+      d.alter = (d.alter||0) + dt;
+      if(d.alter > 18){
+        d.gelandet = true;
+        if(d.typ === "bug") o.position.y = GRUND_TIEFE + 1.1;
+        else if(d.typ === "heck") o.position.y = GRUND_TIEFE + 2.2;
+        else if(d.typ === "npcwrack") o.position.y = GRUND_TIEFE + .6;
+        else o.position.y = GRUND_TIEFE + .5;
+        continue;
+      }
+    }
 
     if(d.typ === "schornstein"){
       const unter = o.position.y < .2;
@@ -1301,6 +2495,9 @@ function truemmerSchritt(dt, t){
         d.setzZeit += dt;
         o.rotation.x += (-.35 - o.rotation.x) * Math.min(1, dt*1.2);
         o.rotation.z += (d.zielRotZ - o.rotation.z) * Math.min(1, dt*1);
+        // Der Bug traf beim echten Untergang mit voller Wucht auf den
+        // Grund und wurde dabei sichtbar zusammengestaucht.
+        o.scale.y += (.5 - o.scale.y) * Math.min(1, dt*.9);
       }
     }
 
@@ -1329,6 +2526,9 @@ function truemmerSchritt(dt, t){
         o.rotation.x += (.15 - o.rotation.x) * Math.min(1, dt*.9);
         o.rotation.z += (d.zielRotZ - o.rotation.z) * Math.min(1, dt*.8);
         o.position.y += ((GRUND_TIEFE + 1.1) - o.position.y) * Math.min(1, dt*.9);
+        // Das Heck wurde beim echten Untergang eher verdreht/aufgerissen
+        // als platt gedrückt – trotzdem etwas gestaucht beim Aufprall.
+        o.scale.y += (.65 - o.scale.y) * Math.min(1, dt*.7);
       }
     }
 
@@ -1353,13 +2553,59 @@ function truemmerSchritt(dt, t){
   }
 }
 
+function naechsterHafen(x, z){
+  return haefen.reduce((a, b) => Math.hypot(x-a.x, z-a.z) <= Math.hypot(x-b.x, z-b.z) ? a : b);
+}
+
 function starteUntergang(grund){
   if(spiel.sinkt) return;
-  spiel.sinkt = true; spiel.sinkZeit = 0; spiel.gebrochen = false;
-  spiel.ruheZeit = 0; spiel.overlayGezeigt = false;
+  setzeSchiffslichter(schiff, 0);   // Stromausfall
+  for(const pfeil of zielPfeile) pfeil.g.visible = false;
+  // Laufende Verladeanimationen (Seil + Fahrgäste) sofort abbrechen
+  for(const anim of verladeAnimationen){
+    szene.remove(anim.seil);
+    for(const f of anim.figuren) szene.remove(f.obj);
+  }
+  verladeAnimationen.length = 0;
+  spiel.sinkt = true; spiel.sinkZeit = 0; spiel.ruheZeit = 0; spiel.overlayGezeigt = false;
   spiel.untergangsGrund = grund || "eisberg";
-  spiel.bugEintrag = null; spiel.heckEintrag = null;
   crashTon();
+
+  if(fahrzeugTyp === "uboot" || fahrzeugTyp === "wasserflugzeug"){
+    // Einzelnes Bauteil (kein Bug/Heck) – kippt einfach zur Seite und
+    // sinkt als Ganzes auf den Meeresgrund.
+    spiel.gebrochen = true;   // verhindert, dass alte Titanic-Pfade greifen
+    const eintrag = {
+      typ: "npcwrack", obj: schiff.wurzel,
+      vy: -.4, kippZiel: (Math.random()<.5?1:-1)*(1+Math.random()*.4),
+      gelandet: false, setzZeit: 0
+    };
+    truemmer.push(eintrag);
+    spiel.ubootWrack = eintrag;
+    spritzer(spiel.x, schiff.wurzel.position.y, spiel.z, 14, 5);
+
+    if(schiff.boote.length === 0){
+      // Keine Rettungsboote an Bord – alle Fahrgäste schwimmen selbst zum
+      // nächsten Hafen.
+      spiel.gaeste.forEach((gast, i) => {
+        const fig = schiff.gaesteFiguren[i];
+        if(!fig || !fig.visible) return;
+        szene.attach(fig);
+        fig.scale.setScalar(.75);
+        schwimmer.push({
+          fig, x: fig.position.x, z: fig.position.z,
+          zielHafen: naechsterHafen(spiel.x, spiel.z),
+          tempo: .55 + Math.random()*.35
+        });
+      });
+    }
+    return;
+  }
+
+  spiel.gebrochen = false; spiel.sinkVy = 0;
+  spiel.bugEintrag = null; spiel.heckEintrag = null;
+  spiel.abwurfZeiten = zufaelligeAbwurfZeiten();
+  spiel.bruchZeit = 2.1 + Math.random()*1.8;
   // Rettungsboote werden zu Wasser gelassen
   for(const rb of schiff.boote){
     const w = new THREE.Vector3();
@@ -1367,22 +2613,100 @@ function starteUntergang(grund){
     szene.add(rb);
     rb.position.set(w.x + (Math.random()-.5)*3, .2, w.z + (Math.random()-.5)*3);
     rb.rotation.set(0, Math.random()*Math.PI*2, 0);
+    rb.userData.zielHafen = naechsterHafen(spiel.x, spiel.z);
+    rb.userData.tempo = 1.1 + Math.random()*.6;
   }
-  // Alle Fahrgäste klettern in die Rettungsboote! 🛟
+  // Fahrgäste verhalten sich unterschiedlich: die einen klettern in ein
+  // Rettungsboot, andere springen über Bord und schwimmen selbst zum
+  // nächsten Hafen, wieder andere bleiben (mutig oder unglücklich) einfach
+  // an Bord und sinken mit dem Schiff unter.
   spiel.gaeste.forEach((gast, i) => {
     const fig = schiff.gaesteFiguren[i];
     if(!fig || !fig.visible) return;
-    szene.attach(fig);
-    fig.scale.setScalar(.8);
-    gerettete.push({
-      fig, boot: schiff.boote[i % schiff.boote.length],
-      offX: (Math.random()-.5)*.12, offZ: (Math.random()-.5)*.15
-    });
+    const wuerfel = Math.random();
+    if(wuerfel < .22){
+      return;   // Bleibt an Bord (Kind von bug/heck) und sinkt mit dem Wrack
+    } else if(wuerfel < .52){
+      // Springt über Bord und schwimmt eigenständig zum nächsten Hafen
+      szene.attach(fig);
+      fig.scale.setScalar(.75);
+      schwimmer.push({
+        fig,
+        x: fig.position.x, z: fig.position.z,
+        zielHafen: naechsterHafen(spiel.x, spiel.z),
+        tempo: .55 + Math.random()*.35
+      });
+      spritzer(fig.position.x, .3, fig.position.z, 6, 2);
+    } else {
+      // Klettert in ein Rettungsboot
+      szene.attach(fig);
+      fig.scale.setScalar(.8);
+      gerettete.push({
+        fig, boot: schiff.boote[i % schiff.boote.length],
+        offX: (Math.random()-.5)*.12, offZ: (Math.random()-.5)*.15
+      });
+    }
   });
 }
 
+/* Schwimmer, die über Bord gesprungen sind, paddeln selbstständig zum
+   nächsten Hafen und reihen sich dort wieder in die Warteschlange ein. */
+const schwimmer = [];
+function schwimmerSchritt(dt, t){
+  for(let i=schwimmer.length-1;i>=0;i--){
+    const s = schwimmer[i];
+    const dx = s.zielHafen.dockX - s.x, dz = s.zielHafen.dockZ - s.z;
+    const d = Math.hypot(dx, dz);
+    if(d > 2.5){
+      s.x += dx/d * s.tempo * dt;
+      s.z += dz/d * s.tempo * dt;
+      s.fig.rotation.y = Math.atan2(dx, dz);
+      s.fig.position.set(s.x, wellenHoehe(s.x, s.z, t)*.3 + .05, s.z);
+    } else {
+      if(s.zielHafen.warte.length < HAFEN_WARTE_MAX){
+        s.zielHafen.warte.push({ziel: zufaelligesZiel(s.zielHafen)});
+        aktualisiereHafenFiguren();
+      }
+      zeigeToast(`🏊 Ein geretteter Schwimmer erreicht ${s.zielHafen.name}!`);
+      szene.remove(s.fig);
+      schwimmer.splice(i, 1);
+    }
+  }
+}
+
+/* Rettungsboote mit geretteten Fahrgästen steuern selbstständig den
+   nächstgelegenen Hafen an; dort steigen die Fahrgäste aus und reihen
+   sich wieder in die Warteschlange ein, damit man sie später abholen kann. */
+function rettungsbootSchritt(dt){
+  for(const rb of rettungsboote){
+    if(rb.parent !== szene || !rb.userData.zielHafen) continue;
+    const ziel = rb.userData.zielHafen;
+    const dx = ziel.dockX - rb.position.x, dz = ziel.dockZ - rb.position.z;
+    const d = Math.hypot(dx, dz);
+    if(d > 3){
+      const tempo = rb.userData.tempo || 1.2;
+      rb.position.x += dx/d * tempo * dt;
+      rb.position.z += dz/d * tempo * dt;
+      rb.rotation.y = Math.atan2(dx, dz);
+    } else {
+      const angekommen = gerettete.filter(g => g.boot === rb);
+      for(const g of angekommen){
+        szene.remove(g.fig);
+        const i = gerettete.indexOf(g);
+        if(i >= 0) gerettete.splice(i, 1);
+        if(ziel.warte.length < HAFEN_WARTE_MAX) ziel.warte.push({ziel: zufaelligesZiel(ziel)});
+      }
+      if(angekommen.length){
+        aktualisiereHafenFiguren();
+        zeigeToast(`🛟 Gerettete Fahrgäste erreichen ${ziel.name}!`);
+      }
+      rb.userData.zielHafen = null;
+    }
+  }
+}
+
 function neustart(){
-  if(spiel.sinkt && !spiel.gebrochen) brichAuseinander();
+  if(spiel.sinkt && !spiel.gebrochen) brichAuseinander(spiel, schiff);
   if(!spiel.sinkt){
     szene.remove(schiff.wurzel);
     for(const rb of schiff.boote){
@@ -1390,11 +2714,11 @@ function neustart(){
       if(i >= 0) rettungsboote.splice(i, 1);
     }
   }
-  schiff = baueTitanic();
+  schiff = baueAktuellesSchiff();
 
-  spiel.x = 0; spiel.z = 0; spiel.richtung = 0; spiel.tempo = 0;
+  spiel.x = 0; spiel.z = 0; spiel.richtung = 0; spiel.tempo = 0; spiel.tiefe = 0; spiel.hoehe = 0; spiel.ankerUnten = false;
   spiel.gaeste = []; spiel.boostEnergie = 1; spiel.boostAktiv = false;
-  spiel.sinkt = false; spiel.sinkZeit = 0; spiel.gebrochen = false;
+  spiel.sinkt = false; spiel.sinkZeit = 0; spiel.gebrochen = false; spiel.sinkVy = 0;
   spiel.bugEintrag = null; spiel.heckEintrag = null;
   spiel.ruheZeit = 0; spiel.overlayGezeigt = false;
   aktualisiereGaesteFiguren();
@@ -1406,49 +2730,142 @@ function neustart(){
   ton(440,.12,"triangle"); setTimeout(()=>ton(660,.15,"triangle"),120);
 }
 
-/* ---------------- Häfen: Anlegen & Fahrgäste ---------------- */
+/* ---------------- Häfen: Anlegen & Fahrgäste ----------------
+   Beim Anlegen erscheint ein Seil (Steg → Schiff), Fahrgäste laufen
+   nacheinander darüber, danach verschwindet es wieder – alles zusammen
+   höchstens 5 Sekunden, damit man auch bei mehreren Leuten den Überblick
+   behält. */
+const verladeAnimationen = [];
+function starteVerladung(h){
+  // Aussteigen: alle an Bord, deren Ziel dieser Hafen ist
+  const raus = spiel.gaeste.filter(g => g.ziel === h);
+  spiel.gaeste = spiel.gaeste.filter(g => g.ziel !== h);
+  if(raus.length > 0){
+    spiel.sterne += raus.length;
+    hudSterne.textContent = spiel.sterne;
+  }
+  // Zusteigen (Kapazität nach dem Aussteigen prüfen)
+  const frei = schiff.gaesteFiguren.length - spiel.gaeste.length;
+  const rein = h.warte.splice(0, Math.max(0, Math.min(h.warte.length, frei)));
+
+  // Figuren an Bord/am Steg sofort ausblenden – sie "laufen" ab jetzt als
+  // eigene Lauf-Figuren über das Seil und erscheinen erst am Ziel wieder.
+  aktualisiereGaesteFiguren();
+  aktualisiereHafenFiguren();
+
+  const gesamt = raus.length + rein.length;
+  let meldung = "";
+  if(raus.length > 0) meldung += `${raus.length} Fahrgast${raus.length===1?"":"e"} am Ziel (+${raus.length} ⭐)! `;
+  if(rein.length > 0){
+    const zielNamen = [...new Set(rein.map(g => g.ziel.name))].join(", ");
+    meldung += `${rein.length} steigen zu → ${zielNamen}`;
+  }
+  if(gesamt === 0){
+    zeigeToast(`⚓ ${h.name}: Gerade niemand am Steg.`);
+    return;
+  }
+  fahrgastTon();
+  zeigeToast(`⚓ ${h.name}: ${meldung}`);
+
+  // Fester Punkt am äußeren Steg, an dem das Seil befestigt ist
+  const l = Math.hypot(h.x, h.z) || 1;
+  const dirX = -h.x/l, dirZ = -h.z/l;
+  const stegX = h.x + dirX*12, stegZ = h.z + dirZ*12;
+
+  const GEH_DAUER = 1.3;
+  const dauerGesamt = Math.min(5, .3 + gesamt*.5 + GEH_DAUER);
+  const proPerson = (dauerGesamt - GEH_DAUER) / gesamt;
+
+  const figuren = [];
+  let i = 0;
+  for(const g of raus){
+    const f = baueFigur(h.flagge);
+    szene.add(f);
+    figuren.push({obj:f, start: i*proPerson, dauer: GEH_DAUER, richtung:"aus", fertig:false});
+    i++;
+  }
+  for(const g of rein){
+    const f = baueFigur(g.ziel.flagge);
+    szene.add(f);
+    figuren.push({obj:f, start: i*proPerson, dauer: GEH_DAUER, richtung:"ein", fertig:false, gast:g});
+    i++;
+  }
+
+  // Seil als dünne Linie – wird jeden Frame ans (sich bewegende) Schiff angepasst
+  const seilGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(stegX, 1.25, stegZ),
+    new THREE.Vector3(spiel.x, 1.25, spiel.z)
+  ]);
+  const seil = new THREE.Line(seilGeo, new THREE.LineBasicMaterial({color:0xf4efe4}));
+  szene.add(seil);
+
+  verladeAnimationen.push({ seil, figuren, stegX, stegZ, start: uhr.elapsedTime, dauer: dauerGesamt });
+}
+function verladeSchritt(t){
+  for(let ai = verladeAnimationen.length-1; ai>=0; ai--){
+    const anim = verladeAnimationen[ai];
+    const alter = t - anim.start;
+
+    const pos = anim.seil.geometry.attributes.position;
+    pos.setXYZ(0, anim.stegX, 1.25, anim.stegZ);
+    pos.setXYZ(1, spiel.x, 1.25, spiel.z);
+    pos.needsUpdate = true;
+
+    let alleFertig = true;
+    const schiffY = .05 + wellenHoehe(spiel.x, spiel.z, t)*.35;
+    for(const f of anim.figuren){
+      const lokal = alter - f.start;
+      if(lokal < 0){ f.obj.visible = false; alleFertig = false; continue; }
+      f.obj.visible = true;
+      const p = Math.min(1, lokal / f.dauer);
+      let vonX, vonZ, vonY, zuX, zuZ, zuY;
+      if(f.richtung === "aus"){
+        vonX = spiel.x; vonZ = spiel.z; vonY = schiffY + 2.2;
+        zuX = anim.stegX; zuZ = anim.stegZ; zuY = 1.15;
+      } else {
+        vonX = anim.stegX; vonZ = anim.stegZ; vonY = 1.15;
+        zuX = spiel.x; zuZ = spiel.z; zuY = schiffY + 2.2;
+      }
+      f.obj.position.set(
+        THREE.MathUtils.lerp(vonX, zuX, p),
+        THREE.MathUtils.lerp(vonY, zuY, p),
+        THREE.MathUtils.lerp(vonZ, zuZ, p));
+
+      if(p < 1) alleFertig = false;
+      else if(!f.fertig){
+        f.fertig = true;
+        if(f.richtung === "ein"){
+          spiel.gaeste.push(f.gast);
+          aktualisiereGaesteFiguren();
+        }
+      }
+    }
+
+    if(alter > anim.dauer + .3 || alleFertig){
+      szene.remove(anim.seil);
+      for(const f of anim.figuren) szene.remove(f.obj);
+      verladeAnimationen.splice(ai, 1);
+    }
+  }
+}
+
 function hafenSchritt(dt){
   for(const h of haefen){
     h.nachschub += dt;
     if(h.nachschub > 16){
       h.nachschub = 0;
-      if(h.warte.length < 5){
+      if(h.warte.length < HAFEN_WARTE_MAX){
         h.warte.push({ziel: zufaelligesZiel(h)});
         aktualisiereHafenFiguren();
       }
     }
 
     const d = Math.hypot(spiel.x - h.dockX, spiel.z - h.dockZ);
-    if(d < 6.5 && Math.abs(spiel.tempo) < 1.6){
+    if(d < 6.5 && Math.abs(spiel.tempo) < 2.4){
       h.dockZeit += dt;
       if(h.dockZeit > .8 && !h.abgefertigt){
         h.abgefertigt = true;
-        let meldung = "";
-        // Aussteigen: alle an Bord, deren Ziel dieser Hafen ist
-        const raus = spiel.gaeste.filter(g => g.ziel === h);
-        if(raus.length > 0){
-          spiel.sterne += raus.length;
-          hudSterne.textContent = spiel.sterne;
-          spiel.gaeste = spiel.gaeste.filter(g => g.ziel !== h);
-          meldung += `${raus.length} Fahrgast${raus.length===1?"":"e"} am Ziel (+${raus.length} ⭐)! `;
-        }
-        // Zusteigen
-        const frei = KAPAZITAET - spiel.gaeste.length;
-        const rein = Math.min(h.warte.length, frei);
-        if(rein > 0){
-          const neue = h.warte.splice(0, rein);
-          spiel.gaeste.push(...neue);
-          const zielNamen = [...new Set(neue.map(g => g.ziel.name))].join(", ");
-          meldung += `${rein} steigen zu → ${zielNamen}`;
-          aktualisiereHafenFiguren();
-        }
-        aktualisiereGaesteFiguren();
-        if(meldung){
-          fahrgastTon();
-          zeigeToast(`⚓ ${h.name}: ${meldung}`);
-        } else {
-          zeigeToast(`⚓ ${h.name}: Gerade niemand am Steg.`);
-        }
+        starteVerladung(h);
       }
     } else {
       h.dockZeit = 0;
@@ -1464,7 +2881,8 @@ function schrittLoop(){
   const t = uhr.elapsedTime;
 
   /* Tageszeit & Wetter zuerst – davon hängen Wellen und Farben ab */
-  const nacht = nachtWert(t);
+  const nacht = nachtWert(weltzeit());
+  aktuelleNacht = nacht;
   sturmSchritt(dt);
   niederschlagSchritt(dt, t);
 
@@ -1488,6 +2906,13 @@ function schrittLoop(){
   wasserGeo.attributes.color.needsUpdate = true;
   wasserGeo.computeVertexNormals();
 
+  /* Eisberge treiben langsam über die Karte statt fest zu liegen */
+  eisbergSchritt(dt, t);
+  inselSchritt(dt, t);
+  fischSchritt(dt, t);
+  seegrasSchritt(t);
+  seeschlangenSchritt(dt, t);
+
   /* NPC-Schiffe tuckern immer weiter */
   for(const npc of npcSchiffe) npcSchritt(npc, dt, t);
 
@@ -1498,23 +2923,42 @@ function schrittLoop(){
   /* Trümmer und Wrackteile sinken / liegen am Grund */
   truemmerSchritt(dt, t);
 
+  /* Rettungsboote mit geretteten Fahrgästen steuern selbstständig einen Hafen an */
+  rettungsbootSchritt(dt);
+
+  /* Über Bord gesprungene Schwimmer paddeln selbst zum nächsten Hafen */
+  schwimmerSchritt(dt, t);
+
+  /* Rauch aus den Kaminen altern lassen */
+  rauchSchritt(dt);
+
+  /* Fahrgäste laufen auf dem Deck herum, solange das Schiff über Wasser ist */
+  if(!spiel.sinkt) gaesteWanderSchritt(schiff, dt, t);
+
+  /* Leuchttürme drehen sich und blenden nachts auf */
+  leuchttuermeSchritt(dt);
+  ankerSchritt();
+
+  /* Ziel-Pfeile über dem Schiff dem Ziel entgegendrehen */
+  zielPfeileSchritt(t);
+
+  /* Verladeanimationen (Seil + laufende Fahrgäste) unabhängig weiterlaufen lassen */
+  verladeSchritt(t);
+
   if(spiel.sinkt){
     spiel.sinkZeit += dt;
 
-    if(!spiel.gebrochen){
-      const w = schiff.wurzel;
-      w.position.set(spiel.x, .1 - spiel.sinkZeit*spiel.sinkZeit*.14, spiel.z);
-      w.rotation.y = spiel.richtung;
-      w.rotation.x = -Math.min(.52, spiel.sinkZeit*.22);
-      w.rotation.z = Math.sin(spiel.sinkZeit*.9)*.06;
-
-      const abwurf = [1.0, 1.45, 1.9, 2.3];
-      schiff.schornsteine.forEach((s, i) => {
-        if(spiel.sinkZeit > abwurf[i] && s.parent !== szene) loeseSchornstein(s);
-      });
-
-      if(Math.random() < .6) spritzer(spiel.x, .4, spiel.z, 1, 6);
-      if(spiel.sinkZeit > 2.6) brichAuseinander();
+    if(fahrzeugTyp === "uboot" || fahrzeugTyp === "wasserflugzeug"){
+      if(spiel.ubootWrack && spiel.ubootWrack.gelandet){
+        spiel.ruheZeit += dt;
+        if(!spiel.overlayGezeigt && spiel.ruheZeit > 2){
+          spiel.overlayGezeigt = true;
+          zeigeUntergang();
+        }
+      }
+    } else if(!spiel.gebrochen){
+      schiffPhase1Schritt(spiel, schiff, dt);
+      if(spiel.sinkZeit > spiel.bruchZeit) brichAuseinander(spiel, schiff);
     } else {
       if(spiel.bugEintrag.gelandet && spiel.heckEintrag.gelandet){
         spiel.ruheZeit += dt;
@@ -1530,17 +2974,16 @@ function schrittLoop(){
     const schub = aktuellerSchub();
     pruefeHupe();
 
-    const willBoost = boostGedrueckt() && schub > .05;
-    const boostet = willBoost && spiel.boostEnergie > 0;
+    const boostet = boostGedrueckt() && schub > .05;
     if(boostet && !spiel.boostAktiv) boostTon();
     spiel.boostAktiv = boostet;
-    if(boostet) spiel.boostEnergie = Math.max(0, spiel.boostEnergie - dt/3.5);
-    else spiel.boostEnergie = Math.min(1, spiel.boostEnergie + dt/7);
-    hudBoost.style.width = Math.round(spiel.boostEnergie*100) + "%";
+    spiel.boostEnergie = 1;                 // Boost ist jetzt unbegrenzt, Anzeige bleibt voll
+    hudBoost.style.width = "100%";
 
-    const zielTempo = (schub >= 0 ? schub * 13 : schub * 8) * (boostet ? 1.8 : 1);
+    const zielTempo = (schub >= 0 ? schub * 15.5 : schub * 13) * (boostet ? 1.8 : 1);
     spiel.tempo += (zielTempo - spiel.tempo) * Math.min(1, dt*(boostet ? 1.8 : 1.1));
     spiel.tempo *= (1 - dt*.12);
+    if(spiel.ankerUnten) spiel.tempo *= Math.max(0, 1 - dt*4.5);
     const wendigkeit = 1.05 * Math.min(1, Math.abs(spiel.tempo)/4 + .12) * (boostet ? .8 : 1);
     spiel.richtung -= lenkung * wendigkeit * dt * Math.sign(spiel.tempo||1);
 
@@ -1550,16 +2993,22 @@ function schrittLoop(){
     let nz = spiel.z + Math.cos(spiel.richtung) * -spiel.tempo * dt
            + sturm.windZ * sturm.staerke * dt * 2.4;
 
-    /* Eisberg = Untergang! */
+    /* Eisberg = Untergang! Ein Eisberg ragt aber nur ein Stück unter die
+       Wasseroberfläche – taucht das U-Boot tief genug, geht es einfach
+       drunter durch. Das Wasserflugzeug fliegt hoch genug einfach drüber. */
+    const fliegtHoch = fahrzeugTyp === "wasserflugzeug" && spiel.hoehe > 2.2;
     for(const berg of eisberge){
-      if(Math.hypot(nx-berg.x, nz-berg.z) < berg.r + SCHIFF_RADIUS*.55){
+      const eisTiefeGenug = fahrzeugTyp === "uboot" && spiel.tiefe > berg.r*1.7;
+      if(!eisTiefeGenug && !fliegtHoch && Math.hypot(nx-berg.x, nz-berg.z) < berg.r + SCHIFF_RADIUS*.55){
         spiel.x = nx; spiel.z = nz;
         starteUntergang("eisberg");
         break;
       }
     }
-    /* NPC gerammt? Dann sinken BEIDE Schiffe! */
-    if(!spiel.sinkt){
+    /* NPC gerammt? Dann sinken BEIDE Schiffe! Auch das gilt nur nah an der
+       Oberfläche – ein tief tauchendes U-Boot oder ein hoch fliegendes
+       Wasserflugzeug ist davor sicher. */
+    if(!spiel.sinkt && !fliegtHoch && (fahrzeugTyp !== "uboot" || spiel.tiefe < 3.5)){
       for(const npc of [...npcSchiffe]){
         const d = Math.hypot(nx-npc.x, nz-npc.z);
         if(d < 4){
@@ -1579,7 +3028,7 @@ function schrittLoop(){
       }
     }
     if(!spiel.sinkt){
-      for(const insel of inseln){
+      if(!fliegtHoch) for(const insel of inseln){
         const d = Math.hypot(nx-insel.x, nz-insel.z);
         if(d < insel.r + .8){
           const wx = (nx-insel.x)/d, wz = (nz-insel.z)/d;
@@ -1588,24 +3037,67 @@ function schrittLoop(){
           spiel.tempo *= .3;
         }
       }
+
+      /* Automatisches Anlegen: nur wenn man gerade NICHT aktiv Gas gibt
+         (also andocken will), bremst und zieht sich das Schiff sanft zur
+         Anlegestelle. Sobald man Vollgas gibt, lässt die Hilfe sofort los –
+         so kommt man immer problemlos wieder vom Hafen weg. Das U-Boot legt
+         nicht an – es transportiert ja keine Fahrgäste. */
+      if(Math.abs(schub) < .22){
+        for(const h of haefen){
+          const dd = Math.hypot(nx-h.dockX, nz-h.dockZ);
+          if(dd < 13){
+            const staerke = (13-dd)/13;
+            spiel.tempo *= Math.max(0, 1 - staerke*dt*2.2);
+            const zug = staerke*staerke*Math.min(1, dt*3);
+            nx += (h.dockX-nx)*zug;
+            nz += (h.dockZ-nz)*zug;
+          }
+        }
+      }
+
       nx = THREE.MathUtils.clamp(nx, -RAND, RAND);
       nz = THREE.MathUtils.clamp(nz, -RAND, RAND);
       spiel.x = nx; spiel.z = nz;
 
       const w = schiff.wurzel;
-      w.position.set(spiel.x, .05 + wellenHoehe(spiel.x, spiel.z, t)*.35, spiel.z);
-      w.rotation.y = spiel.richtung;
-      const vorn = wellenHoehe(spiel.x + Math.sin(spiel.richtung)*-4.5, spiel.z + Math.cos(spiel.richtung)*-4.5, t);
-      const hinten = wellenHoehe(spiel.x + Math.sin(spiel.richtung)*4.5, spiel.z + Math.cos(spiel.richtung)*4.5, t);
-      w.rotation.x = (vorn-hinten)*.05 + spiel.tempo*.002;
-      w.rotation.z = lenkung * -.07 + Math.sin(t*.9)*.015*wellenFaktor;
+      if(fahrzeugTyp === "uboot"){
+        // Tiefe per Achse/Tasten steuern – 0 = Oberfläche, mehr = tiefer
+        spiel.tiefe = THREE.MathUtils.clamp(spiel.tiefe + aktuelleTauchrichtung()*4.2*dt, 0, GRUND_TIEFE*-1 - 2.5);
+        w.position.set(spiel.x, .1 - spiel.tiefe, spiel.z);
+        w.rotation.y = spiel.richtung;
+        w.rotation.x += (aktuelleTauchrichtung()*.35 - w.rotation.x) * Math.min(1, dt*2);
+        w.rotation.z = lenkung * -.12;
+      } else if(fahrzeugTyp === "wasserflugzeug"){
+        // Höhe per Achse/Tasten steuern – Steigen braucht genug Fahrt,
+        // sonst bleibt man (wie in echt) einfach am Wasser kleben.
+        const steig = -aktuelleTauchrichtung();   // Taste C = steigen, F = sinken
+        let wunschDelta = steig*6*dt;
+        if(wunschDelta > 0 && spiel.tempo < 6) wunschDelta = 0;
+        spiel.hoehe = THREE.MathUtils.clamp(spiel.hoehe + wunschDelta, 0, 110);
+        const amWasser = spiel.hoehe <= .05;
+        w.position.set(spiel.x, amWasser ? 1.2 + wellenHoehe(spiel.x, spiel.z, t)*.35 : spiel.hoehe, spiel.z);
+        w.rotation.y = spiel.richtung;
+        w.rotation.x += (steig*.22 - w.rotation.x) * Math.min(1, dt*2);
+        w.rotation.z = lenkung * -.32;
+        if(schiff.propeller) schiff.propeller.rotation.z += dt*(18 + Math.abs(spiel.tempo)*7);
+      } else {
+        w.position.set(spiel.x, .05 + wellenHoehe(spiel.x, spiel.z, t)*.35, spiel.z);
+        w.rotation.y = spiel.richtung;
+        const vorn = wellenHoehe(spiel.x + Math.sin(spiel.richtung)*-4.5, spiel.z + Math.cos(spiel.richtung)*-4.5, t);
+        const hinten = wellenHoehe(spiel.x + Math.sin(spiel.richtung)*4.5, spiel.z + Math.cos(spiel.richtung)*4.5, t);
+        w.rotation.x = (vorn-hinten)*.05 + spiel.tempo*.002;
+        w.rotation.z = lenkung * -.07 + Math.sin(t*.9)*.015*wellenFaktor;
+      }
 
       if(Math.abs(spiel.tempo) > 3 && Math.random() < (boostet ? .95 : .6)){
         spritzer(
           spiel.x + Math.sin(spiel.richtung)*5,
-          .45,
+          fahrzeugTyp === "uboot" ? w.position.y+.3 : .45,
           spiel.z + Math.cos(spiel.richtung)*5, boostet ? 2 : 1, 1.6);
       }
+      emittiereRauch(schiff, Math.sin(spiel.richtung)*-spiel.tempo, Math.cos(spiel.richtung)*-spiel.tempo);
+      setzeSchiffslichter(schiff, aktuelleNacht);
 
       hafenSchritt(dt);
 
@@ -1667,8 +3159,21 @@ function schrittLoop(){
   } else {
     const kx = spiel.x + Math.sin(spiel.richtung)*16;
     const kz = spiel.z + Math.cos(spiel.richtung)*16;
-    kamera.position.lerp(new THREE.Vector3(kx, 9.5, kz), Math.min(1, dt*3));
-    kamera.lookAt(spiel.x, Math.max(1.5, schiff.wurzel.position.y+1.5), spiel.z);
+    if(fahrzeugTyp === "uboot"){
+      // Kamera folgt dem U-Boot auch in die Tiefe, statt an der
+      // Wasseroberfläche "zurückzubleiben".
+      const ky = schiff.wurzel.position.y + 3.2;
+      kamera.position.lerp(new THREE.Vector3(kx, ky, kz), Math.min(1, dt*3));
+      kamera.lookAt(spiel.x, schiff.wurzel.position.y, spiel.z);
+    } else if(fahrzeugTyp === "wasserflugzeug"){
+      // Kamera folgt dem Flugzeug auch beim Steigen mit nach oben.
+      const ky = schiff.wurzel.position.y + 3.5;
+      kamera.position.lerp(new THREE.Vector3(kx, ky, kz), Math.min(1, dt*3));
+      kamera.lookAt(spiel.x, schiff.wurzel.position.y, spiel.z);
+    } else {
+      kamera.position.lerp(new THREE.Vector3(kx, 9.5, kz), Math.min(1, dt*3));
+      kamera.lookAt(spiel.x, Math.max(1.5, schiff.wurzel.position.y+1.5), spiel.z);
+    }
   }
 
   /* Himmel, Licht und Nebel aus Tageszeit + Sturm mischen */
