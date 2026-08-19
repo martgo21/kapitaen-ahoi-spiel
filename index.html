@@ -100,7 +100,7 @@
   <div class="chip aus" id="chipMp">Multiplayer: getrennt</div>
 </div>
 
-<div id="hinweis">⌨️ <b>Pfeiltasten</b>/<b>WASD</b>, <b>E</b> = Boost, <b>Leertaste</b> hupt, <b>R</b> = Neustart. 📱 Auf dem Handy erscheinen Touch-Tasten automatisch.<br>
+<div id="hinweis">⌨️ <b>Pfeiltasten</b>/<b>WASD</b>, <b>E</b> = Boost, <b>G</b> = Anker, <b>Leertaste</b> hupt, <b>R</b> = Neustart. 📱 Auf dem Handy erscheinen Touch-Tasten automatisch.<br>
 🧊 Eisberge und Rammen versenken das Schiff! ⚓ Die <b>Schilder</b> zeigen die Häfen, ein <b>Pfeil</b> überm Schiff das nächste Ziel –
 die <b>Farbe</b> der Figuren zeigt, zu welcher <b>Hafenfahne</b> sie wollen.</div>
 <div id="toast"></div>
@@ -112,6 +112,7 @@ die <b>Farbe</b> der Figuren zeigt, zu welcher <b>Hafenfahne</b> sie wollen.</di
   </div>
   <div class="mGruppe">
     <button class="mKnopf" id="mHupe" aria-label="Hupe">📯</button>
+    <button class="mKnopf" id="mAnker" aria-label="Anker">⚓</button>
     <div class="mSpalte">
       <button class="mKnopf" id="mVor" aria-label="Vorwärts">▲</button>
       <button class="mKnopf" id="mBoost" aria-label="Boost">⚡</button>
@@ -405,6 +406,96 @@ function fischSchritt(dt, t){
   }
 }
 
+/* ---------------- Korallen & Seegras am Meeresgrund ---------------- */
+const KORALLEN_FARBEN = [0xe8637c, 0xf2a33c, 0x7ed6d1, 0xc77fd1, 0xe8823c, 0xf25c8c];
+function baueKoralle(x, z){
+  const g = new THREE.Group();
+  const farbe = KORALLEN_FARBEN[Math.floor(Math.random()*KORALLEN_FARBEN.length)];
+  const mat = new THREE.MeshPhongMaterial({color:farbe, flatShading:true});
+  const aeste = 3 + Math.floor(Math.random()*4);
+  for(let i=0;i<aeste;i++){
+    const h = .5 + Math.random()*1.1;
+    const ast = new THREE.Mesh(new THREE.ConeGeometry(.14+Math.random()*.14, h, 7), mat);
+    ast.position.set((Math.random()-.5)*.8, h*.5, (Math.random()-.5)*.8);
+    ast.rotation.set((Math.random()-.5)*.6, 0, (Math.random()-.5)*.6);
+    g.add(ast);
+  }
+  g.position.set(x, GRUND_TIEFE+.05, z);
+  g.rotation.y = Math.random()*Math.PI*2;
+  szene.add(g);
+}
+const seegrasListe = [];
+function baueSeegras(x, z){
+  const g = new THREE.Group();
+  const mat = new THREE.MeshPhongMaterial({color:0x2e9e5b, flatShading:true, side:THREE.DoubleSide});
+  const halme = 4 + Math.floor(Math.random()*5);
+  const blaetter = [];
+  for(let i=0;i<halme;i++){
+    const h = .7 + Math.random()*1.3;
+    const geo = new THREE.PlaneGeometry(.12, h);
+    geo.translate(0, h/2, 0);
+    const halm = new THREE.Mesh(geo, mat);
+    halm.position.set((Math.random()-.5)*.6, 0, (Math.random()-.5)*.6);
+    halm.rotation.y = Math.random()*Math.PI;
+    g.add(halm);
+    blaetter.push(halm);
+  }
+  g.position.set(x, GRUND_TIEFE+.02, z);
+  szene.add(g);
+  seegrasListe.push({blaetter, phase: Math.random()*10});
+}
+for(let i=0;i<70;i++) baueKoralle((Math.random()-.5)*470, (Math.random()-.5)*470);
+for(let i=0;i<90;i++) baueSeegras((Math.random()-.5)*470, (Math.random()-.5)*470);
+function seegrasSchritt(t){
+  for(const s of seegrasListe){
+    for(const halm of s.blaetter) halm.rotation.z = Math.sin(t*.8 + s.phase)*.25;
+  }
+}
+
+/* ---------------- Giftige Seeschlangen ---------------- */
+const seeschlangen = [];
+function baueSeeschlange(){
+  const g = new THREE.Group();
+  const hellMat = new THREE.MeshPhongMaterial({color:0xd6c220, flatShading:true});
+  const dunkelMat = new THREE.MeshPhongMaterial({color:0x2a2a1a, flatShading:true});
+  const segmente = [];
+  const anzahl = 8;
+  for(let i=0;i<anzahl;i++){
+    const seg = new THREE.Mesh(new THREE.SphereGeometry(.17-i*.009, 8, 6), i%2===0 ? hellMat : dunkelMat);
+    szene.add(seg);
+    segmente.push(seg);
+  }
+  const x = (Math.random()-.5)*440, z = (Math.random()-.5)*440;
+  seeschlangen.push({
+    segmente, x, z, y: GRUND_TIEFE + 1.5 + Math.random()*4,
+    richtung: Math.random()*Math.PI*2, tempo: .8+Math.random()*.6, phase: Math.random()*10
+  });
+}
+for(let i=0;i<14;i++) baueSeeschlange();
+function seeschlangenSchritt(dt, t){
+  for(const s of seeschlangen){
+    s.richtung += (Math.random()-.5)*dt*.5;
+    s.x += Math.sin(s.richtung)*s.tempo*dt;
+    s.z += Math.cos(s.richtung)*s.tempo*dt;
+    if(Math.abs(s.x) > RAND-10) s.richtung += Math.PI*.5;
+    if(Math.abs(s.z) > RAND-10) s.richtung += Math.PI*.5;
+    for(let i=0;i<s.segmente.length;i++){
+      const versatz = i*.24;
+      const seitlich = Math.sin(t*3 + s.phase - i*.9)*.4;
+      const px = s.x - Math.sin(s.richtung)*versatz + Math.cos(s.richtung)*seitlich;
+      const pz = s.z - Math.cos(s.richtung)*versatz - Math.sin(s.richtung)*seitlich;
+      s.segmente[i].position.set(px, s.y, pz);
+    }
+    // Gefährlich fürs U-Boot, wenn es zu nah rankommt
+    if(fahrzeugTyp === "uboot" && !spiel.sinkt){
+      const uwY = schiff.wurzel.position.y;
+      if(Math.hypot(spiel.x-s.x, spiel.z-s.z) < 2.3 && Math.abs(uwY - s.y) < 2.5){
+        starteUntergang("schlange");
+      }
+    }
+  }
+}
+
 function wellenHoehe(x, z, t){
   return (Math.sin(x*.16 + t*1.1)*.42
        + Math.cos(z*.13 + t*1.5)*.36
@@ -580,11 +671,16 @@ function baueSchiffVoll(farbe, stil){
     }
   }
 
-  // Neun Plätze für Fahrgäste auf dem Oberdeck (mehr Kapazität)
+  // 24 Plätze für Fahrgäste auf dem Oberdeck – deutlich mehr Kapazität
   const gaesteFiguren = [];
   const wanderZiel = [];
   const plaetze = [];
-  for(let i=0;i<9;i++) plaetze.push([(i%2? .4:-.4), -2.3 + i*(4.6/8)]);
+  const REIHEN = 8, SPALTEN = 3;
+  for(let r=0;r<REIHEN;r++){
+    for(let c=0;c<SPALTEN;c++){
+      plaetze.push([(c-1)*.42, -2.3 + r*(4.6/(REIHEN-1))]);
+    }
+  }
   for(let i=0;i<plaetze.length;i++){
     const f = baueFigur(0xffffff);
     f.position.set(plaetze[i][0], 2.28, plaetze[i][1]);
@@ -881,6 +977,58 @@ function baueAktuellesSchiff(){
 }
 let schiff = baueAktuellesSchiff();
 const SCHIFF_RADIUS = 3.2 * SCHIFF_SKALA;
+
+/* ---------------- Anker ----------------
+   Ein Anker, den man werfen kann, um auf der Stelle zu bleiben – für
+   Schiffe und U-Boot. Kette + Anker sind eigenständige Weltobjekte
+   (nicht am Schiff hängend), damit die Kette immer sauber gerade bis
+   zum Meeresgrund läuft, egal wie das Schiff gerade schaukelt. */
+let ankerLinie = null, ankerMesh = null;
+function baueAnkerSystem(){
+  const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+  ankerLinie = new THREE.Line(geo, new THREE.LineBasicMaterial({color:0x9aa5ab}));
+  ankerLinie.visible = false;
+  szene.add(ankerLinie);
+
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(.16, .045, 6, 10), MAT.dunkel);
+  ring.rotation.x = Math.PI/2;
+  ring.position.y = .28; g.add(ring);
+  const schaft = new THREE.Mesh(new THREE.CylinderGeometry(.045,.045,.6,6), MAT.dunkel);
+  g.add(schaft);
+  const quersteg = new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,.42,6), MAT.dunkel);
+  quersteg.rotation.z = Math.PI/2;
+  quersteg.position.y = .18; g.add(quersteg);
+  for(const seite of [-1,1]){
+    const fluke = new THREE.Mesh(new THREE.ConeGeometry(.15,.35,4), MAT.dunkel);
+    fluke.rotation.z = seite*.85;
+    fluke.position.set(seite*.2, -.42, 0);
+    g.add(fluke);
+  }
+  g.visible = false;
+  szene.add(g);
+  ankerMesh = g;
+}
+baueAnkerSystem();
+function ankerUmschalten(){
+  if(fahrzeugTyp === "wasserflugzeug" || spiel.sinkt) return;
+  spiel.ankerUnten = !spiel.ankerUnten;
+  ton(spiel.ankerUnten ? 90 : 180, .3, "triangle", .18);
+  zeigeToast(spiel.ankerUnten ? "⚓ Anker geworfen" : "⚓ Anker gelichtet");
+}
+function ankerSchritt(){
+  const aktiv = spiel.ankerUnten && fahrzeugTyp !== "wasserflugzeug" && !spiel.sinkt;
+  ankerLinie.visible = aktiv;
+  ankerMesh.visible = aktiv;
+  if(!aktiv) return;
+  const obenY = schiff.wurzel.position.y;
+  const untenY = GRUND_TIEFE + .35;
+  const pos = ankerLinie.geometry.attributes.position;
+  pos.setXYZ(0, spiel.x, obenY, spiel.z);
+  pos.setXYZ(1, spiel.x, untenY, spiel.z);
+  pos.needsUpdate = true;
+  ankerMesh.position.set(spiel.x, untenY, spiel.z);
+}
 
 /* Gemeinsamer Partikel-Topf für Gischt, Blasen, Sandwolken */
 const gischtGeo = new THREE.BufferGeometry();
@@ -1648,6 +1796,7 @@ addEventListener("keydown", e => {
   tasten[e.key.toLowerCase()] = true;
   if(e.key===" "){ hupe(); e.preventDefault(); }
   if(e.key.toLowerCase()==="r") neustart();
+  if(e.key.toLowerCase()==="g") ankerUmschalten();
 });
 addEventListener("keyup", e => { tasten[e.key.toLowerCase()] = false; });
 
@@ -1671,6 +1820,8 @@ bindHaltKnopf("mZurueck",  v => touch.zurueck = v);
 bindHaltKnopf("mBoost",    v => touch.boost = v);
 document.getElementById("mHupe")?.addEventListener("pointerdown", e => { e.preventDefault(); hupe(); });
 document.getElementById("mHupe")?.addEventListener("contextmenu", e => e.preventDefault());
+document.getElementById("mAnker")?.addEventListener("pointerdown", e => { e.preventDefault(); ankerUmschalten(); });
+document.getElementById("mAnker")?.addEventListener("contextmenu", e => e.preventDefault());
 // Steuerkreuz nur auf Touch-Geräten einblenden, damit es am Desktop nicht stört
 if("ontouchstart" in window || navigator.maxTouchPoints > 0){
   document.getElementById("mobileSteuerung")?.classList.add("aktiv");
@@ -2039,6 +2190,8 @@ function zeigeUntergang(){
   const gaeste = spiel.gaeste.length;
   const grundText = spiel.untergangsGrund === "schiff"
     ? "Ein Zusammenstoß mit einem anderen Schiff!"
+    : spiel.untergangsGrund === "schlange"
+    ? "Eine giftige Seeschlange hat zugebissen!"
     : "Ein Eisberg! Genau wie damals …";
   if(fahrzeugTyp === "uboot"){
     karte.innerHTML = `
@@ -2099,9 +2252,8 @@ function aktualisiereChips(){
 }
 
 /* ---------------- Spiel-Zustand ---------------- */
-const KAPAZITAET = 9;
 const RAND = 240;
-const spiel = { x:0, z:0, richtung:0, tempo:0, sterne:0, tiefe:0, hoehe:0,
+const spiel = { x:0, z:0, richtung:0, tempo:0, sterne:0, tiefe:0, hoehe:0, ankerUnten:false,
                 gaeste: [],                    // [{ziel: hafen}]
                 boostEnergie:1, boostAktiv:false,
                 sinkt:false, sinkZeit:0, gebrochen:false, sinkVy:0,
@@ -2343,6 +2495,9 @@ function truemmerSchritt(dt, t){
         d.setzZeit += dt;
         o.rotation.x += (-.35 - o.rotation.x) * Math.min(1, dt*1.2);
         o.rotation.z += (d.zielRotZ - o.rotation.z) * Math.min(1, dt*1);
+        // Der Bug traf beim echten Untergang mit voller Wucht auf den
+        // Grund und wurde dabei sichtbar zusammengestaucht.
+        o.scale.y += (.5 - o.scale.y) * Math.min(1, dt*.9);
       }
     }
 
@@ -2371,6 +2526,9 @@ function truemmerSchritt(dt, t){
         o.rotation.x += (.15 - o.rotation.x) * Math.min(1, dt*.9);
         o.rotation.z += (d.zielRotZ - o.rotation.z) * Math.min(1, dt*.8);
         o.position.y += ((GRUND_TIEFE + 1.1) - o.position.y) * Math.min(1, dt*.9);
+        // Das Heck wurde beim echten Untergang eher verdreht/aufgerissen
+        // als platt gedrückt – trotzdem etwas gestaucht beim Aufprall.
+        o.scale.y += (.65 - o.scale.y) * Math.min(1, dt*.7);
       }
     }
 
@@ -2558,7 +2716,7 @@ function neustart(){
   }
   schiff = baueAktuellesSchiff();
 
-  spiel.x = 0; spiel.z = 0; spiel.richtung = 0; spiel.tempo = 0; spiel.tiefe = 0; spiel.hoehe = 0;
+  spiel.x = 0; spiel.z = 0; spiel.richtung = 0; spiel.tempo = 0; spiel.tiefe = 0; spiel.hoehe = 0; spiel.ankerUnten = false;
   spiel.gaeste = []; spiel.boostEnergie = 1; spiel.boostAktiv = false;
   spiel.sinkt = false; spiel.sinkZeit = 0; spiel.gebrochen = false; spiel.sinkVy = 0;
   spiel.bugEintrag = null; spiel.heckEintrag = null;
@@ -2587,7 +2745,7 @@ function starteVerladung(h){
     hudSterne.textContent = spiel.sterne;
   }
   // Zusteigen (Kapazität nach dem Aussteigen prüfen)
-  const frei = KAPAZITAET - spiel.gaeste.length;
+  const frei = schiff.gaesteFiguren.length - spiel.gaeste.length;
   const rein = h.warte.splice(0, Math.max(0, Math.min(h.warte.length, frei)));
 
   // Figuren an Bord/am Steg sofort ausblenden – sie "laufen" ab jetzt als
@@ -2752,6 +2910,8 @@ function schrittLoop(){
   eisbergSchritt(dt, t);
   inselSchritt(dt, t);
   fischSchritt(dt, t);
+  seegrasSchritt(t);
+  seeschlangenSchritt(dt, t);
 
   /* NPC-Schiffe tuckern immer weiter */
   for(const npc of npcSchiffe) npcSchritt(npc, dt, t);
@@ -2777,6 +2937,7 @@ function schrittLoop(){
 
   /* Leuchttürme drehen sich und blenden nachts auf */
   leuchttuermeSchritt(dt);
+  ankerSchritt();
 
   /* Ziel-Pfeile über dem Schiff dem Ziel entgegendrehen */
   zielPfeileSchritt(t);
@@ -2822,6 +2983,7 @@ function schrittLoop(){
     const zielTempo = (schub >= 0 ? schub * 15.5 : schub * 13) * (boostet ? 1.8 : 1);
     spiel.tempo += (zielTempo - spiel.tempo) * Math.min(1, dt*(boostet ? 1.8 : 1.1));
     spiel.tempo *= (1 - dt*.12);
+    if(spiel.ankerUnten) spiel.tempo *= Math.max(0, 1 - dt*4.5);
     const wendigkeit = 1.05 * Math.min(1, Math.abs(spiel.tempo)/4 + .12) * (boostet ? .8 : 1);
     spiel.richtung -= lenkung * wendigkeit * dt * Math.sign(spiel.tempo||1);
 
@@ -2910,9 +3072,9 @@ function schrittLoop(){
         // Höhe per Achse/Tasten steuern – Steigen braucht genug Fahrt,
         // sonst bleibt man (wie in echt) einfach am Wasser kleben.
         const steig = -aktuelleTauchrichtung();   // Taste C = steigen, F = sinken
-        let wunschDelta = steig*3.5*dt;
+        let wunschDelta = steig*6*dt;
         if(wunschDelta > 0 && spiel.tempo < 6) wunschDelta = 0;
-        spiel.hoehe = THREE.MathUtils.clamp(spiel.hoehe + wunschDelta, 0, 22);
+        spiel.hoehe = THREE.MathUtils.clamp(spiel.hoehe + wunschDelta, 0, 110);
         const amWasser = spiel.hoehe <= .05;
         w.position.set(spiel.x, amWasser ? 1.2 + wellenHoehe(spiel.x, spiel.z, t)*.35 : spiel.hoehe, spiel.z);
         w.rotation.y = spiel.richtung;
