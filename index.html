@@ -100,8 +100,8 @@
   <div class="chip aus" id="chipMp">Multiplayer: getrennt</div>
 </div>
 
-<div id="hinweis">⌨️ <b>Pfeiltasten</b>/<b>WASD</b>, <b>E</b> = Boost, <b>G</b> = Anker, <b>Leertaste</b> hupt, <b>R</b> = Neustart. 📱 Auf dem Handy erscheinen Touch-Tasten automatisch.<br>
-🧊 Eisberge und Rammen versenken das Schiff! ⚓ Die <b>Schilder</b> zeigen die Häfen, ein <b>Pfeil</b> überm Schiff das nächste Ziel –
+<div id="hinweis">⌨️ <b>Pfeiltasten</b>/<b>WASD</b>, <b>E</b> = Boost, <b>G</b> = Anker, <b>Q</b> = Kanone, <b>Leertaste</b> hupt, <b>R</b> = Neustart. 📱 Auf dem Handy erscheinen Touch-Tasten automatisch.<br>
+🏴‍☠️ Piraten greifen an und versuchen zu entern! Kanone drauf halten. 🧊 Eisberge und Rammen versenken das Schiff! ⚓ Die <b>Schilder</b> zeigen die Häfen, ein <b>Pfeil</b> überm Schiff das nächste Ziel –
 die <b>Farbe</b> der Figuren zeigt, zu welcher <b>Hafenfahne</b> sie wollen.</div>
 <div id="toast"></div>
 
@@ -113,6 +113,7 @@ die <b>Farbe</b> der Figuren zeigt, zu welcher <b>Hafenfahne</b> sie wollen.</di
   <div class="mGruppe">
     <button class="mKnopf" id="mHupe" aria-label="Hupe">📯</button>
     <button class="mKnopf" id="mAnker" aria-label="Anker">⚓</button>
+    <button class="mKnopf" id="mKanone" aria-label="Kanone">💥</button>
     <div class="mSpalte">
       <button class="mKnopf" id="mVor" aria-label="Vorwärts">▲</button>
       <button class="mKnopf" id="mBoost" aria-label="Boost">⚡</button>
@@ -1756,6 +1757,217 @@ function versenkeNpc(npc){
   setTimeout(spawnNpc, 6000);
 }
 
+/* ---------------- Piraten ----------------
+   Bewusst kindgerecht gehalten: keine Verletzungen, keine Gewalt-Optik –
+   nur fröhliche Kanonenkugeln mit Platsch-Spritzern und ein "Arrr!" beim
+   Entern. Sinken funktioniert genau wie überall sonst im Spiel: freundlich,
+   ohne Drama, mit Wrack am Meeresgrund und kurz danach neuem Nachschub. */
+const PIRATEN_MAX = 5;
+const piraten = [];
+function bauePiratenSchiff(){
+  const g = new THREE.Group();
+  const rumpfMat = new THREE.MeshPhongMaterial({color:0x232323, flatShading:true});
+  const holzMat = new THREE.MeshPhongMaterial({color:0x5a3a24, flatShading:true});
+  const rumpf = new THREE.Mesh(new THREE.BoxGeometry(1.5, .9, 5.6, 1, 1, 5), rumpfMat);
+  {
+    const p = rumpf.geometry.attributes.position;
+    for(let i=0;i<p.count;i++){
+      const z = p.getZ(i);
+      if(z < -2.2) p.setX(i, p.getX(i)*.15);
+      else if(z > 2.2) p.setX(i, p.getX(i)*.6);
+    }
+    rumpf.geometry.computeVertexNormals();
+  }
+  rumpf.position.y = .45; g.add(rumpf);
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(1.3, .1, 5), holzMat);
+  deck.position.y = .95; g.add(deck);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(.06,.08,3,7), holzMat);
+  mast.position.set(0, 2, -.5); g.add(mast);
+
+  // Freundlich-comic-hafte Totenkopf-Flagge (per Canvas, kein Realismus)
+  const canvas = document.createElement("canvas");
+  canvas.width = 64; canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#1c1c1c"; ctx.fillRect(0,0,64,64);
+  ctx.fillStyle = "#fdf6e3";
+  ctx.beginPath(); ctx.arc(32,26,15,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = "#1c1c1c";
+  ctx.beginPath(); ctx.arc(25,25,4,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(39,25,4,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(32,34,3,0,Math.PI*2); ctx.fill();
+  const flaggenTextur = new THREE.CanvasTexture(canvas);
+  const flagge = new THREE.Mesh(new THREE.PlaneGeometry(.8,.8),
+    new THREE.MeshBasicMaterial({map:flaggenTextur, side:THREE.DoubleSide, fog:false}));
+  flagge.position.set(0, 3.3, -.5);
+  g.add(flagge);
+
+  const kanoneL = new THREE.Mesh(new THREE.CylinderGeometry(.06,.08,.5,8), MAT.dunkel);
+  kanoneL.rotation.z = Math.PI/2; kanoneL.position.set(.72, .95, -1); g.add(kanoneL);
+  const kanoneR = kanoneL.clone(); kanoneR.position.x = -.72; g.add(kanoneR);
+
+  szene.add(g);
+  return g;
+}
+function spawnPirat(){
+  let x, z, tries = 0;
+  do{
+    x = (Math.random()-.5)*380; z = (Math.random()-.5)*380; tries++;
+  } while((!platzFrei(x,z) || Math.hypot(x-spiel.x, z-spiel.z) < 55) && tries < 50);
+  const p = {
+    obj: bauePiratenSchiff(), x, z, richtung: Math.random()*Math.PI*2,
+    tempo: 3 + Math.random()*1.3, hp: 4,
+    ziel: null, zielSuche: 0,
+    feuerCooldown: 3 + Math.random()*3,
+    enterCooldown: 0
+  };
+  piraten.push(p);
+  return p;
+}
+
+function versenkePirat(p){
+  const i = piraten.indexOf(p);
+  if(i >= 0) piraten.splice(i, 1);
+  truemmer.push({
+    typ: "npcwrack", obj: p.obj,
+    vy: -.3, kippZiel: (Math.random()<.5?1:-1)*(1+Math.random()*.4),
+    gelandet: false, setzZeit: 0
+  });
+  spritzer(p.x, .5, p.z, 16, 5);
+  ton(140, .4, "square", .16); setTimeout(()=>ton(90,.5,"triangle",.14), 120);
+  setTimeout(spawnPirat, 9000 + Math.random()*6000);   // "kommen kurz darauf wieder"
+}
+
+/* ---------------- Kanonenkugeln (gemeinsam für Spieler & Piraten) ---------------- */
+const kanonenkugeln = [];
+function schiesseKanonenkugel(vonX, vonZ, zuX, zuZ, wer){
+  const dx = zuX-vonX, dz = zuZ-vonZ;
+  const d = Math.hypot(dx, dz) || 1;
+  const kugel = new THREE.Mesh(new THREE.SphereGeometry(.13, 8, 6),
+    new THREE.MeshPhongMaterial({color: wer==="spieler" ? 0x2a2f36 : 0x8a1f1f, flatShading:true}));
+  kugel.position.set(vonX, 1.1, vonZ);
+  szene.add(kugel);
+  kanonenkugeln.push({
+    obj: kugel, wer, ziel: wer==="spieler" ? "pirat" : "spieler",
+    vx: dx/d*16, vz: dz/d*16, leben: 3
+  });
+  ton(wer==="spieler" ? 220 : 170, .12, "square", .13);
+}
+function feuerePlayerSalve(){
+  if(spiel.sinkt || fahrzeugTyp === "uboot" || spiel.kanoneCooldown > 0) return;
+  let ziel = null, bestD = 70;
+  for(const p of piraten){
+    const d = Math.hypot(p.x-spiel.x, p.z-spiel.z);
+    if(d < bestD){ bestD = d; ziel = p; }
+  }
+  const zuX = ziel ? ziel.x : spiel.x + Math.sin(spiel.richtung)*-40;
+  const zuZ = ziel ? ziel.z : spiel.z + Math.cos(spiel.richtung)*-40;
+  let i = 0;
+  const timer = setInterval(() => {
+    if(i >= 10 || spiel.sinkt){ clearInterval(timer); return; }
+    schiesseKanonenkugel(spiel.x, spiel.z, zuX + (Math.random()-.5)*4, zuZ + (Math.random()-.5)*4, "spieler");
+    i++;
+  }, 90);
+  spiel.kanoneCooldown = 2.6;
+  zeigeToast(ziel ? "💥 Feuer frei!" : "💥 Feuer frei! (kein Pirat in Reichweite)");
+}
+function piratenSchiessen(p){
+  let i = 0;
+  const timer = setInterval(() => {
+    if(i >= 3) { clearInterval(timer); return; }
+    schiesseKanonenkugel(p.x, p.z, spiel.x + (Math.random()-.5)*4, spiel.z + (Math.random()-.5)*4, "pirat");
+    i++;
+  }, 140);
+}
+function kanonenkugelnSchritt(dt){
+  for(let i=kanonenkugeln.length-1;i>=0;i--){
+    const k = kanonenkugeln[i];
+    k.obj.position.x += k.vx*dt;
+    k.obj.position.z += k.vz*dt;
+    k.leben -= dt;
+    let getroffen = false;
+    if(k.ziel === "pirat"){
+      for(const p of piraten){
+        if(Math.hypot(k.obj.position.x-p.x, k.obj.position.z-p.z) < 2.2){
+          p.hp--;
+          spritzer(p.x, .6, p.z, 8, 2.5);
+          ton(300, .1, "triangle", .12);
+          if(p.hp <= 0) versenkePirat(p);
+          getroffen = true;
+          break;
+        }
+      }
+    } else if(!spiel.sinkt && fahrzeugTyp !== "uboot"){
+      if(Math.hypot(k.obj.position.x-spiel.x, k.obj.position.z-spiel.z) < 2.4){
+        spiel.piratenTreffer = (spiel.piratenTreffer||0) + 1;
+        spritzer(spiel.x, .6, spiel.z, 8, 2.5);
+        ton(180, .15, "sawtooth", .14);
+        zeigeToast(`💥 Getroffen! (${spiel.piratenTreffer}/4)`);
+        if(spiel.piratenTreffer >= 4) starteUntergang("piraten");
+        getroffen = true;
+      }
+    }
+    if(getroffen || k.leben <= 0){
+      szene.remove(k.obj);
+      kanonenkugeln.splice(i,1);
+    }
+  }
+}
+function piratenSchritt(dt, t){
+  for(const p of piraten){
+    p.zielSuche -= dt;
+    if(p.zielSuche <= 0){
+      p.zielSuche = 2.5 + Math.random()*2;
+      let bestD = 55, bestZiel = null;
+      if(!spiel.sinkt && fahrzeugTyp !== "uboot"){
+        const d = Math.hypot(spiel.x-p.x, spiel.z-p.z);
+        if(d < bestD){ bestD = d; bestZiel = "spieler"; }
+      }
+      for(const npc of npcSchiffe){
+        const d = Math.hypot(npc.x-p.x, npc.z-p.z);
+        if(d < bestD){ bestD = d; bestZiel = npc; }
+      }
+      p.ziel = bestZiel;
+    }
+
+    let zielX, zielZ, istSpieler = false;
+    if(p.ziel === "spieler"){ zielX = spiel.x; zielZ = spiel.z; istSpieler = true; }
+    else if(p.ziel && npcSchiffe.includes(p.ziel)){ zielX = p.ziel.x; zielZ = p.ziel.z; }
+    else { zielX = p.x + Math.sin(p.richtung)*20; zielZ = p.z + Math.cos(p.richtung)*20; }
+
+    const dx = zielX-p.x, dz = zielZ-p.z;
+    const wunsch = Math.atan2(-dx, -dz);
+    const diff = winkelDiff(wunsch, p.richtung);
+    p.richtung += THREE.MathUtils.clamp(diff, -1, 1) * dt * .8;
+    const d = Math.hypot(dx, dz);
+    const fahrTempo = (p.ziel && d < 16) ? p.tempo*.3 : p.tempo;   // bremst nah dran, statt reinzurammen
+    p.x += -Math.sin(p.richtung)*fahrTempo*dt;
+    p.z += -Math.cos(p.richtung)*fahrTempo*dt;
+    p.x = THREE.MathUtils.clamp(p.x, -240, 240);
+    p.z = THREE.MathUtils.clamp(p.z, -240, 240);
+
+    p.obj.position.set(p.x, .05 + wellenHoehe(p.x, p.z, t)*.35, p.z);
+    p.obj.rotation.y = p.richtung;
+    p.obj.rotation.z = Math.sin(t*1.1+p.x)*.04*wellenFaktor;
+
+    // Feuer, wenn nah genug am Ziel
+    p.feuerCooldown -= dt;
+    if(p.ziel && d < 22 && d > 3 && p.feuerCooldown <= 0){
+      p.feuerCooldown = 4 + Math.random()*2.5;
+      if(istSpieler) piratenSchiessen(p);
+    }
+
+    // Entern: ganz nah am Spieler dran = ein paar Sterne "geklaut", dann zieht der Pirat wieder ab
+    p.enterCooldown -= dt;
+    if(istSpieler && d < 3 && p.enterCooldown <= 0 && !spiel.sinkt){
+      p.enterCooldown = 12;
+      const klau = Math.min(2, spiel.sterne);
+      spiel.sterne -= klau;
+      hudSterne.textContent = spiel.sterne;
+      ton(500,.1,"square",.12); setTimeout(()=>ton(400,.12,"square",.12),90);
+      zeigeToast(klau>0 ? `🏴‍☠️ Piraten entern und klauen ${klau} Sterne!` : "🏴‍☠️ Piraten versuchen zu entern!");
+    }
+  }
+}
 /* ---------------- Multiplayer (WebSocket) ----------------
    Ein sehr schlanker Relay-Server verteilt Position/Richtung/Sinken-
    Status an alle verbundenen Spieler. Andere Spieler bekommen dieselbe
@@ -2015,6 +2227,7 @@ addEventListener("keydown", e => {
   if(e.key===" "){ hupe(); e.preventDefault(); }
   if(e.key.toLowerCase()==="r") neustart();
   if(e.key.toLowerCase()==="g") ankerUmschalten();
+  if(e.key.toLowerCase()==="q") feuerePlayerSalve();
 });
 addEventListener("keyup", e => { tasten[e.key.toLowerCase()] = false; });
 
@@ -2040,6 +2253,8 @@ document.getElementById("mHupe")?.addEventListener("pointerdown", e => { e.preve
 document.getElementById("mHupe")?.addEventListener("contextmenu", e => e.preventDefault());
 document.getElementById("mAnker")?.addEventListener("pointerdown", e => { e.preventDefault(); ankerUmschalten(); });
 document.getElementById("mAnker")?.addEventListener("contextmenu", e => e.preventDefault());
+document.getElementById("mKanone")?.addEventListener("pointerdown", e => { e.preventDefault(); feuerePlayerSalve(); });
+document.getElementById("mKanone")?.addEventListener("contextmenu", e => e.preventDefault());
 // Steuerkreuz nur auf Touch-Geräten einblenden, damit es am Desktop nicht stört
 if("ontouchstart" in window || navigator.maxTouchPoints > 0){
   document.getElementById("mobileSteuerung")?.classList.add("aktiv");
@@ -2424,6 +2639,8 @@ function zeigeUntergang(){
     ? "Ein Zusammenstoß mit einem anderen Schiff!"
     : spiel.untergangsGrund === "schlange"
     ? "Eine giftige Seeschlange hat zugebissen!"
+    : spiel.untergangsGrund === "piraten"
+    ? "Piraten haben zu oft getroffen!"
     : "Ein Eisberg! Genau wie damals …";
   if(fahrzeugTyp === "uboot"){
     karte.innerHTML = `
@@ -2489,7 +2706,7 @@ function aktualisiereChips(){
 
 /* ---------------- Spiel-Zustand ---------------- */
 const RAND = 240;
-const spiel = { x:0, z:0, richtung:0, tempo:0, sterne:0, tiefe:0, hoehe:0, ankerUnten:false,
+const spiel = { x:0, z:0, richtung:0, tempo:0, sterne:0, tiefe:0, hoehe:0, ankerUnten:false, kanoneCooldown:0, piratenTreffer:0,
                 gaeste: [],                    // [{ziel: hafen}]
                 boostEnergie:1, boostAktiv:false,
                 sinkt:false, sinkZeit:0, gebrochen:false, sinkVy:0,
@@ -2955,7 +3172,7 @@ function neustart(){
   }
   schiff = baueAktuellesSchiff();
 
-  spiel.x = 0; spiel.z = 0; spiel.richtung = 0; spiel.tempo = 0; spiel.tiefe = 0; spiel.hoehe = 0; spiel.ankerUnten = false;
+  spiel.x = 0; spiel.z = 0; spiel.richtung = 0; spiel.tempo = 0; spiel.tiefe = 0; spiel.hoehe = 0; spiel.ankerUnten = false; spiel.piratenTreffer = 0;
   spiel.gaeste = []; spiel.boostEnergie = 1; spiel.boostAktiv = false;
   spiel.sinkt = false; spiel.sinkZeit = 0; spiel.gebrochen = false; spiel.sinkVy = 0;
   spiel.bugEintrag = null; spiel.heckEintrag = null;
@@ -3207,6 +3424,11 @@ function schrittLoop(){
   /* Leuchttürme drehen sich und blenden nachts auf */
   leuchttuermeSchritt(dt);
   ankerSchritt();
+
+  /* Piraten und Kanonenkugeln */
+  if(spiel.kanoneCooldown > 0) spiel.kanoneCooldown -= dt;
+  piratenSchritt(dt, t);
+  kanonenkugelnSchritt(dt);
 
   /* Ziel-Pfeile über dem Schiff dem Ziel entgegendrehen */
   zielPfeileSchritt(t);
@@ -3481,6 +3703,7 @@ function schrittLoop(){
 aktualisiereChips();
 aktualisiereGaesteFiguren();
 for(let i=0;i<6;i++) spawnNpc();   // Startflotte auslaufen lassen
+for(let i=0;i<PIRATEN_MAX;i++) spawnPirat();   // Piratenflotte startklar
 zeigeStart();
 schrittLoop();
 </script>
